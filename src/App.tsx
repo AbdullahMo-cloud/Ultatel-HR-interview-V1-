@@ -6,8 +6,17 @@ import DatabaseView from './DatabaseView';
 import RecordDetailView from './RecordDetailView';
 import AnalyticsView from './AnalyticsView';
 import { auth, db } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut, 
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInAnonymously
+} from 'firebase/auth';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { KeyRound, ShieldAlert, Sparkles, X } from 'lucide-react';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'form' | 'db' | 'detail' | 'analytics'>('form');
@@ -25,51 +34,172 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [authChecking, setAuthChecking] = useState(true);
 
+  // Custom login state
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
+
+  // Initialize and check local storage user if present
   useEffect(() => {
+    const localUserStr = localStorage.getItem('ultatel_local_user');
+    if (localUserStr) {
+      try {
+        setUser(JSON.parse(localUserStr));
+        setAuthChecking(false);
+      } catch (e) {
+        localStorage.removeItem('ultatel_local_user');
+      }
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+      // Standard firebase user state overrides local mock ONLY if currentUser is present
+      if (currentUser) {
+        setUser(currentUser);
+        localStorage.removeItem('ultatel_local_user'); // Clear local temp session to prioritize real session
+      }
       setAuthChecking(false);
     });
     return () => unsubscribe();
   }, []);
 
+  // Sync database with Firestore or Local Storage Fallback
   useEffect(() => {
     if (!user) {
       setDatabase([]);
       return;
     }
+
+    // Checking if they are simulated guest / local sandbox admin
+    if (user.uid === 'local-sandbox-admin' || user.isSandbox) {
+      const stored = localStorage.getItem('ultatel_evaluations');
+      if (stored) {
+        try {
+          setDatabase(JSON.parse(stored));
+        } catch (e) {
+          console.error('Error parsing evaluations', e);
+        }
+      } else {
+        setDatabase([]);
+      }
+      return;
+    }
+
+    // Try standard Firestore snapshot
     const q = query(collection(db, 'evaluations'), where('authorId', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const records: EvaluationRecord[] = [];
       snapshot.forEach(doc => {
         records.push(doc.data() as EvaluationRecord);
       });
-      // Sort by date descending
       records.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setDatabase(records);
-    }, (error) => {
-      console.error('Firestore Error:', error);
-      alert(`Error loading data: ${error.message}`);
+      
+      // Keep a shadow cache in localStorage in case offline/unauthorized later
+      localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(records));
+    }, (error: any) => {
+      console.warn('Firestore Error, using local backup database:', error);
+      // Fallback to local storage evaluations for this user or overall cache
+      const stored = localStorage.getItem(`ultatel_evaluations_${user.uid}`) || localStorage.getItem('ultatel_evaluations');
+      if (stored) {
+        try {
+          setDatabase(JSON.parse(stored));
+        } catch (e) {
+          console.error(e);
+        }
+      }
     });
     return () => unsubscribe();
   }, [user]);
 
-  const handleLogin = async () => {
+  // Login handler with Google
+  const handleGoogleLogin = async () => {
+    setLoginError('');
+    setIsLoginLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
+      setShowLoginModal(false);
     } catch (e: any) {
+      console.error(e);
       if (e.code === 'auth/popup-closed-by-user') {
-        // User closed the popup, ignore safely.
-        console.log("Sign-in popup closed by user.");
+        setLoginError("Sign-in cancelled. Popup closed.");
       } else {
-        console.error(e);
+        setLoginError(`Google Sign-In failed: ${e.message}`);
       }
+    } finally {
+      setIsLoginLoading(false);
+    }
+  };
+
+  // Sign In or Auto Sign Up with Email/Password
+  const handleEmailPasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) {
+      setLoginError("Please fill in both email and password.");
+      return;
+    }
+    setLoginError('');
+    setIsLoginLoading(true);
+    
+    try {
+      // First try to sign in
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      setShowLoginModal(false);
+    } catch (signInErr: any) {
+      // If user doesn't exist, try to auto-register them
+      if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
+        try {
+          await createUserWithEmailAndPassword(auth, loginEmail, loginPassword);
+          setShowLoginModal(false);
+        } catch (signUpErr: any) {
+          setLoginError(`Authentication failed: ${signUpErr.message}`);
+        }
+      } else {
+        setLoginError(`Authentication failed: ${signInErr.message}`);
+      }
+    } finally {
+      setIsLoginLoading(false);
+    }
+  };
+
+  // Fast bypass custom Local Sandbox / Guest Login
+  const handleGuestSandboxLogin = async () => {
+    setLoginError('');
+    setIsLoginLoading(true);
+    try {
+      // Attempt anonymous login with Firebase first (retains full Firestore connectivity)
+      try {
+        await signInAnonymously(auth);
+        setShowLoginModal(false);
+        return;
+      } catch (anonErr) {
+        console.warn("Firebase Anonymous Sign-In is not enabled on this console. Falling back to secure off-database Sandbox Admin...");
+      }
+
+      // Offline client-side Sandbox Account
+      const mockUser = {
+        uid: 'local-sandbox-admin',
+        displayName: 'Guest HR Admin',
+        email: 'sandbox@ultatel.com',
+        isSandbox: true,
+        photoURL: ''
+      };
+      localStorage.setItem('ultatel_local_user', JSON.stringify(mockUser));
+      setUser(mockUser);
+      setShowLoginModal(false);
+    } catch (err: any) {
+      setLoginError(`Sandbox activation failed: ${err.message}`);
+    } finally {
+      setIsLoginLoading(false);
     }
   };
 
   const handleLogout = () => {
     signOut(auth);
+    localStorage.removeItem('ultatel_local_user');
+    setUser(null);
   };
 
   const handleAnswer = (questionId: string, value: any) => {
@@ -77,9 +207,11 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    if (!user) return alert("Please log in to submit");
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
     
-    // Quick validation
     if (!candidateName || !interviewerName) {
        return alert("Please provide at least Interviewer Name and Candidate Name");
     }
@@ -98,13 +230,39 @@ export default function App() {
     if (candidateEmail) newRecord.candidateEmail = candidateEmail;
     if (candidatePhone) newRecord.candidatePhone = candidatePhone;
     
+    // Save locally first to guarantee zero-data-loss for sandbox/offline
+    const stored = localStorage.getItem('ultatel_evaluations');
+    let localDB: any[] = [];
+    if (stored) {
+      try {
+        localDB = JSON.parse(stored);
+      } catch (e) {}
+    }
+    localDB.unshift(newRecord);
+    localStorage.setItem('ultatel_evaluations', JSON.stringify(localDB));
+    localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
+
+    if (user.uid === 'local-sandbox-admin' || user.isSandbox) {
+      setDatabase(localDB);
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        setCandidateName('');
+        setCandidateEmail('');
+        setCandidatePhone('');
+        setCandidateSite('Cairo');
+        setAnswers({});
+        setCurrentView('db');
+      }, 1500);
+      return;
+    }
+    
     try {
       await setDoc(doc(db, 'evaluations', newRecordId), newRecord);
       setShowToast(true);
       
       setTimeout(() => {
         setShowToast(false);
-        // Optional: Reset form
         setCandidateName('');
         setCandidateEmail('');
         setCandidatePhone('');
@@ -113,18 +271,42 @@ export default function App() {
         setCurrentView('db');
       }, 1500);
     } catch (e: any) {
-      console.error("Error writing to Firestore:", e);
-      alert(`Error saving evaluation: ${e.message}`);
+      console.warn("Error writing to Firestore, falling back to local database:", e);
+      alert(`Report saved to local database fallback (${e.message || 'Firestore offline'}). You can fully access it on this browser!`);
+      setDatabase(localDB);
+      setCurrentView('db');
     }
   };
 
   const handleDeleteRecord = async (id: string) => {
     if (confirm('Are you sure you want to delete this evaluation?')) {
+      // Delete locally
+      const stored = localStorage.getItem('ultatel_evaluations');
+      let localDB: any[] = [];
+      if (stored) {
+        try {
+          localDB = JSON.parse(stored);
+        } catch (e) {}
+      }
+      localDB = localDB.filter(r => r.id !== id);
+      localStorage.setItem('ultatel_evaluations', JSON.stringify(localDB));
+      if (user) {
+        localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
+      }
+
+      if (user?.uid === 'local-sandbox-admin' || user?.isSandbox) {
+        setDatabase(localDB);
+        if (selectedRecordId === id) setSelectedRecordId(null);
+        return;
+      }
+
       try {
         await deleteDoc(doc(db, 'evaluations', id));
         if (selectedRecordId === id) setSelectedRecordId(null);
       } catch (e) {
-        console.error("Error deleting from Firestore:", e);
+        console.warn("Deleted locally, firestore delete failed (mock mode or permission issue):", e);
+        setDatabase(localDB);
+        if (selectedRecordId === id) setSelectedRecordId(null);
       }
     }
   };
@@ -265,7 +447,7 @@ export default function App() {
               </button>
             </>
           ) : (
-            <button onClick={handleLogin} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white text-sm font-bold rounded-lg shadow-sm hover:bg-brand-blue-light transition-all">
+            <button onClick={() => setShowLoginModal(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white text-sm font-bold rounded-lg shadow-sm hover:bg-brand-blue-light transition-all">
                <User className="w-4 h-4" />
                Log In as Admin
             </button>
@@ -289,7 +471,7 @@ export default function App() {
            
            <div className="flex items-center gap-1">
               {!user ? (
-                <button onClick={handleLogin} className="text-xs font-bold text-brand-blue bg-brand-light px-3 py-1.5 rounded mr-2 uppercase tracking-wide">Login</button>
+                <button onClick={() => setShowLoginModal(true)} className="text-xs font-bold text-brand-blue bg-brand-light px-3 py-1.5 rounded mr-2 uppercase tracking-wide">Login</button>
               ) : (
                 <button onClick={handleLogout} className="text-xs font-bold text-slate-500 hover:text-red-500 uppercase tracking-wide mr-2"><LogOut className="w-4 h-4"/></button>
               )}
@@ -647,6 +829,116 @@ export default function App() {
             <div>
               <div className="font-bold text-sm tracking-wide">Evaluation Submitted</div>
               <div className="text-xs text-slate-400 mt-0.5 font-medium">The evaluation for {candidateName || 'the candidate'} has been saved successfully.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Custom Multi-Method Login Modal Overlay */}
+        {showLoginModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 relative animate-in zoom-in-95 duration-150">
+              <button 
+                onClick={() => setShowLoginModal(false)}
+                className="absolute right-4 top-4 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-50 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="text-center mb-6">
+                <div className="w-12 h-12 bg-brand-light rounded-2xl flex items-center justify-center mx-auto mb-3">
+                  <KeyRound className="w-6 h-6 text-brand-blue" />
+                </div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Database Administration</h3>
+                <p className="text-xs text-slate-500 mt-1 font-semibold">Select your login method to sync evaluation data</p>
+              </div>
+
+              {loginError && (
+                <div className="mb-4 bg-red-50 border border-red-100 p-3.5 rounded-xl flex gap-3 text-xs text-red-600 font-bold leading-relaxed shadow-sm">
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>{loginError}</div>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {/* 1. Primary Google Auth Option */}
+                <button
+                  type="button"
+                  disabled={isLoginLoading}
+                  onClick={handleGoogleLogin}
+                  className="w-full flex items-center justify-center gap-3 px-4 py-3.5 bg-brand-blue text-white rounded-xl text-sm font-black tracking-wide hover:bg-brand-blue-light transition-all shadow-md shadow-brand-blue/10 disabled:opacity-50 active:scale-[0.98]"
+                >
+                  {isLoginLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full"></div>
+                  ) : (
+                    <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.866-3.577-7.866-8s3.536-8 7.866-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 1.114 15.433 0 12.24 0 5.584 0 0 5.37 0 12s5.584 12 12.24 12c6.96 0 11.57-4.814 11.57-11.79 0-.79-.085-1.39-.188-1.925H12.24z"/>
+                    </svg>
+                  )}
+                  Log In with Google
+                </button>
+
+                <div className="flex items-center gap-3 text-slate-300 text-xs font-black uppercase my-4">
+                  <div className="h-[1px] bg-slate-100 flex-1"></div>
+                  <span>or</span>
+                  <div className="h-[1px] bg-slate-100 flex-1"></div>
+                </div>
+
+                {/* 2. Email / Password form */}
+                <form onSubmit={handleEmailPasswordLogin} className="space-y-3 text-left">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Email</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="hr@company.com"
+                      value={loginEmail}
+                      disabled={isLoginLoading}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none font-medium transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={loginPassword}
+                      disabled={isLoginLoading}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none font-medium transition-all"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isLoginLoading}
+                    className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wide hover:bg-slate-800 transition-all shadow-sm active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {isLoginLoading ? "Processing..." : "Sign In or Auto Sign Up"}
+                  </button>
+                </form>
+
+                <div className="flex items-center gap-3 text-slate-300 text-xs font-black uppercase my-4 font-sans">
+                  <div className="h-[1px] bg-slate-100 flex-1"></div>
+                  <span>Vercel Deploy Option</span>
+                  <div className="h-[1px] bg-slate-100 flex-1"></div>
+                </div>
+
+                {/* 3. Fast Bypass Instant Sandbox/Guest Option */}
+                <button
+                  type="button"
+                  disabled={isLoginLoading}
+                  onClick={handleGuestSandboxLogin}
+                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-brand-yellow/10 border border-brand-yellow/30 text-yellow-800 rounded-xl text-xs font-extrabold tracking-wide hover:bg-brand-yellow/20 transition-all"
+                >
+                  <Sparkles className="w-4 h-4 text-brand-yellow animate-pulse" />
+                  Launch Live Demo Sandbox (No Setup)
+                </button>
+                
+                <p className="text-[10px] text-center text-slate-400 font-semibold leading-relaxed px-2">
+                  ℹ️ **Sandbox Mode** works out-of-the-box on Vercel & saves evaluations safely using local web storage cache!
+                </p>
+              </div>
             </div>
           </div>
         )}
