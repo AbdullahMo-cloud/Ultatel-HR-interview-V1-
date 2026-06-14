@@ -1,0 +1,8 @@
+{
+  "name": "Ultatel HR APP",
+  "description": "HR score card application for evaluating BDR candidate performance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

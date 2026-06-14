@@ -1,0 +1,31 @@
+{
+  "entities": {
+    "EvaluationRecord": {
+      "title": "Evaluation Record",
+      "description": "A submitted candidate evaluation",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "interviewerName": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "candidateEmail": { "type": "string" },
+        "candidatePhone": { "type": "string" },
+        "answers": {
+          "type": "map",
+          "description": "Map of Question ID to the selected answer."
+        },
+        "scoreInfo": {
+          "type": "map"
+        },
+        "authorId": { "type": "string" }
+      },
+      "required": ["date", "interviewerName", "candidateName", "answers", "scoreInfo", "authorId"]
+    }
+  },
+  "firestore": {
+    "evaluations/{evaluationId}": {
+      "schema": { "$ref": "EvaluationRecord" },
+      "description": "Store evaluations submitted by HR users."
+    }
+  }
+}
