@@ -1,15 +1,16 @@
 import React, { useRef } from 'react';
 import { EvaluationRecord } from './types';
-import { ArrowLeft, CheckCircle2, AlertTriangle, ShieldX, Mail, Copy, Brain, ShieldCheck, Target, MessageSquare, ClipboardList, CheckCircle, XCircle, Info, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, AlertTriangle, ShieldX, Mail, Copy, Brain, ShieldCheck, Target, MessageSquare, ClipboardList, CheckCircle, XCircle, Info, Image as ImageIcon, Activity, Pencil } from 'lucide-react';
 import { sections } from './data';
 import * as htmlToImage from 'html-to-image';
 
 interface Props {
   record: EvaluationRecord;
   onBack: () => void;
+  onEdit: (id: string) => void;
 }
 
-export default function RecordDetailView({ record, onBack }: Props) {
+export default function RecordDetailView({ record, onBack, onEdit }: Props) {
   const { scoreInfo } = record;
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -65,9 +66,14 @@ export default function RecordDetailView({ record, onBack }: Props) {
         <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-brand-blue transition-colors uppercase tracking-wider cursor-pointer">
           <ArrowLeft className="w-4 h-4" /> Back to Database
         </button>
-        <button onClick={handleCopyAndEmail} className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white text-xs font-bold rounded shadow hover:bg-brand-blue-light transition-all cursor-pointer">
-          <ImageIcon className="w-4 h-4" /> Copy Report as Image & Email
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={() => onEdit(record.id)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded shadow-sm hover:bg-slate-50 transition-all cursor-pointer">
+            <Pencil className="w-4.5 h-4.5 text-brand-blue" /> Edit Candidate Evaluation
+          </button>
+          <button onClick={handleCopyAndEmail} className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white text-xs font-bold rounded shadow hover:bg-brand-blue-light transition-all cursor-pointer">
+            <ImageIcon className="w-4 h-4" /> Copy Report as Image & Email
+          </button>
+        </div>
       </div>
 
       <div ref={printRef} className="bg-white p-6 md:p-8 rounded shadow-sm border border-slate-200">
@@ -104,7 +110,7 @@ export default function RecordDetailView({ record, onBack }: Props) {
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
               <Brain className="absolute -right-4 -bottom-4 w-16 h-16 text-blue-200/50 group-hover:scale-110 group-hover:text-blue-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Brain className="w-4 h-4 text-blue-500" /> Mindset</div>
@@ -116,6 +122,11 @@ export default function RecordDetailView({ record, onBack }: Props) {
               <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec4 || 0} / 20</div>
             </div>
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
+              <ClipboardList className="absolute -right-4 -bottom-4 w-16 h-16 text-amber-200/50 group-hover:scale-110 group-hover:text-amber-200 transition-all duration-300" />
+              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><ClipboardList className="w-4 h-4 text-amber-500" /> Discipline</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec5 || 0} / 15</div>
+            </div>
+            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
               <Target className="absolute -right-4 -bottom-4 w-16 h-16 text-green-200/50 group-hover:scale-110 group-hover:text-green-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Target className="w-4 h-4 text-green-500" /> Coachability</div>
               <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec6 || 0} / 15</div>
@@ -125,15 +136,32 @@ export default function RecordDetailView({ record, onBack }: Props) {
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><MessageSquare className="w-4 h-4 text-rose-500" /> Comm / Roleplay</div>
               <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec7 || 0} / 15</div>
             </div>
+            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
+              <Activity className="absolute -right-4 -bottom-4 w-16 h-16 text-teal-200/50 group-hover:scale-110 group-hover:text-teal-200 transition-all duration-300" />
+              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Activity className="w-4 h-4 text-teal-500" /> Retention Risk</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec8 || 0} / 5</div>
+            </div>
         </div>
 
-        {(scoreInfo?.isMindsetFail || (scoreInfo?.autoFails && scoreInfo.autoFails.length > 0)) && (
+        {(scoreInfo?.isMindsetFail || scoreInfo?.isDisciplineFail || scoreInfo?.isRetentionFail || (scoreInfo?.autoFails && scoreInfo.autoFails.length > 0)) && (
           <div className="mb-8 space-y-3">
              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Logged Flags & Warnings</h4>
              {scoreInfo?.isMindsetFail && (
                 <div className="flex items-start p-3 bg-red-50 text-red-800 rounded-lg text-sm font-medium border border-red-100">
                   <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 text-red-500" />
                   High Quit Risk: Mindset score below 22.
+                </div>
+              )}
+             {scoreInfo?.isDisciplineFail && (
+                <div className="flex items-start p-3 bg-red-50 text-red-800 rounded-lg text-sm font-medium border border-red-100">
+                  <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 text-amber-500" />
+                  High Risk: Discipline & Commitment score below 11.
+                </div>
+              )}
+             {scoreInfo?.isRetentionFail && (
+                <div className="flex items-start p-3 bg-red-50 text-red-800 rounded-lg text-sm font-medium border border-red-100">
+                  <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 text-amber-500" />
+                  High Risk: Retention Risk score below 4.
                 </div>
               )}
               {scoreInfo?.autoFails?.map((failMsg: string, idx: number) => (

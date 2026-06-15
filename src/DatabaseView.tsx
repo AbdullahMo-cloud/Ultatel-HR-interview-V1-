@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { EvaluationRecord } from './types';
-import { Download, Search, Trash2, Eye, Calendar, User, FileSpreadsheet, RefreshCw, CheckCircle, AlertTriangle, Link2, Unlink, LogIn, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { Download, Search, Trash2, Eye, Calendar, User, FileSpreadsheet, RefreshCw, CheckCircle, AlertTriangle, Link2, Unlink, LogIn, ExternalLink, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { createSpreadsheet, validateSpreadsheet, appendRows } from './sheetsService';
 
 interface Props {
   data: EvaluationRecord[];
   onDelete: (id: string) => void;
   onView: (id: string) => void;
+  onEdit: (id: string) => void;
   sheetsConfig: {
     spreadsheetId: string | null;
     spreadsheetUrl: string | null;
@@ -27,6 +28,7 @@ export default function DatabaseView({
   data, 
   onDelete, 
   onView,
+  onEdit,
   sheetsConfig,
   setSheetsConfig,
   googleToken,
@@ -157,8 +159,10 @@ export default function DatabaseView({
           record.scoreInfo?.rec || "",
           record.scoreInfo?.sec3 || 0,
           record.scoreInfo?.sec4 || 0,
+          record.scoreInfo?.sec5 || 0,
           record.scoreInfo?.sec6 || 0,
           record.scoreInfo?.sec7 || 0,
+          record.scoreInfo?.sec8 || 0,
           redFlags
         ];
       });
@@ -191,7 +195,7 @@ export default function DatabaseView({
   };
 
   const handleExport = () => {
-    const headers = ['Date', 'Interviewer', 'Candidate Name', 'Site', 'Email', 'Phone', 'Total Score', 'Mindset Score', 'Honesty Score', 'Coachability Score', 'Comm Score', 'Recommendation', 'Red Flags'];
+    const headers = ['Date', 'Interviewer', 'Candidate Name', 'Site', 'Email', 'Phone', 'Total Score', 'Mindset Score', 'Honesty Score', 'Discipline Score', 'Coachability Score', 'Comm Score', 'Retention Score', 'Recommendation', 'Red Flags'];
     const rows = data.map(r => [
         `"${new Date(r.date).toLocaleDateString()}"`,
         `"${r.interviewerName || ''}"`,
@@ -202,8 +206,10 @@ export default function DatabaseView({
         r.scoreInfo?.total || 0,
         r.scoreInfo?.sec3 || 0,
         r.scoreInfo?.sec4 || 0,
+        r.scoreInfo?.sec5 || 0,
         r.scoreInfo?.sec6 || 0,
         r.scoreInfo?.sec7 || 0,
+        r.scoreInfo?.sec8 || 0,
         `"${r.scoreInfo?.rec || ''}"`,
         `"${r.scoreInfo?.autoFails?.join('; ') || ''}"`
     ]);
@@ -528,6 +534,9 @@ export default function DatabaseView({
                 </td>
                 <td className="p-4 text-right">
                   <div className="flex justify-end gap-2">
+                    <button onClick={() => onEdit(record.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Edit candidate evaluation and details">
+                      <Pencil className="w-4 h-4" />
+                    </button>
                     <button onClick={() => onView(record.id)} className="p-1.5 text-brand-blue hover:bg-brand-light rounded transition-colors" title="View Full Record">
                       <Eye className="w-4 h-4" />
                     </button>

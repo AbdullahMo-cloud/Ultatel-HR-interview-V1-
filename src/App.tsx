@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { sections } from './data';
 import { SectionDef, RatingOption, EvaluationRecord } from './types';
-import { CheckCircle2, AlertTriangle, ShieldX, Check, Database, Plus, PieChart, ClipboardList, MessageSquare, Activity, User, LogOut } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, ShieldX, Check, Database, Plus, PieChart, ClipboardList, MessageSquare, Activity, User, LogOut, RefreshCw } from 'lucide-react';
 import DatabaseView from './DatabaseView';
 import RecordDetailView from './RecordDetailView';
 import AnalyticsView from './AnalyticsView';
@@ -84,8 +84,42 @@ export default function App() {
   const [candidateSite, setCandidateSite] = useState('Cairo');
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [showToast, setShowToast] = useState(false);
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'alert' | 'confirm' | 'success';
+    onConfirm?: () => void;
+  }>({ isOpen: false, title: '', message: '', type: 'alert' });
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const showAlert = (title: string, message: string, type: 'alert' | 'success' = 'alert') => {
+    setDialogConfig({ isOpen: true, title, message, type });
+  };
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setDialogConfig({ isOpen: true, title, message, type: 'confirm', onConfirm });
+  };
   
   const [database, setDatabase] = useState<EvaluationRecord[]>([]);
+  const [deletedRecordIds, setDeletedRecordIds] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('ultatel_deleted_record_ids');
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch (e) {}
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ultatel_deleted_record_ids', JSON.stringify(deletedRecordIds));
+  }, [deletedRecordIds]);
   const [user, setUser] = useState<any>(() => {
     const localUserStr = localStorage.getItem('ultatel_local_user');
     if (localUserStr) {
@@ -171,18 +205,63 @@ export default function App() {
       return;
     }
 
-    // Try standard Firestore snapshot
-    const q = query(collection(db, 'evaluations'), where('authorId', '==', user.uid));
+    // Fetch all evaluations so they are shared across all registered users
+    const q = query(collection(db, 'evaluations'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const records: EvaluationRecord[] = [];
       snapshot.forEach(doc => {
-        records.push(doc.data() as EvaluationRecord);
+        const docData = doc.data();
+        records.push({
+          ...docData,
+          id: doc.id
+        } as EvaluationRecord);
       });
-      records.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setDatabase(records);
+
+      // Merge local storage records (from offline/sandbox) that are not yet in Firestore
+      const storedLocal = localStorage.getItem('ultatel_evaluations') || localStorage.getItem(`ultatel_evaluations_${user.uid}`);
+      let localOnlyRecords: EvaluationRecord[] = [];
+      if (storedLocal) {
+        try {
+          const parsedLocal = JSON.parse(storedLocal) as EvaluationRecord[];
+          localOnlyRecords = parsedLocal.filter(localRec => !records.some(r => r.id === localRec.id));
+        } catch (e) {}
+      }
+
+      // Merge in localOnlyRecords and try to sync them to Cloud Firestore
+      const mergedRecords = [...records];
+      if (localOnlyRecords.length > 0) {
+        localOnlyRecords.forEach(localRec => {
+          mergedRecords.push(localRec);
+
+          // Proactively try to sync localOnlyRecord to Firestore in the background
+          const updatedRec = {
+            ...localRec,
+            authorId: localRec.authorId || user.uid
+          };
+          setDoc(doc(db, 'evaluations', localRec.id), updatedRec)
+            .then(() => {
+              console.log(`Auto-synchronized local record ${localRec.id} to Firestore`);
+            })
+            .catch((err) => {
+              console.warn(`Could not auto-sync local record ${localRec.id} to Firestore:`, err);
+            });
+        });
+      }
       
-      // Keep a shadow cache in localStorage in case offline/unauthorized later
-      localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(records));
+      // Keep sorting completely safe and immune to corrupt, empty, or missing date formats
+      mergedRecords.sort((a, b) => {
+        const timeA = a.date ? new Date(a.date).getTime() : 0;
+        const timeB = b.date ? new Date(b.date).getTime() : 0;
+        const safeA = isNaN(timeA) ? 0 : timeA;
+        const safeB = isNaN(timeB) ? 0 : timeB;
+        return safeB - safeA;
+      });
+      
+      setDatabase(mergedRecords);
+      
+      // Keep shadow cache in localStorage
+      localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(mergedRecords));
+      localStorage.setItem('ultatel_evaluations', JSON.stringify(mergedRecords));
     }, (error: any) => {
       console.warn('Firestore Error, using local backup database:', error);
       // Fallback to local storage evaluations for this user or overall cache
@@ -403,91 +482,174 @@ export default function App() {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
+  const handleEditRecord = (id: string) => {
+    const record = filteredDatabase.find(r => r.id === id);
+    if (!record) return;
+
+    setEditingRecordId(record.id);
+    setCandidateName(record.candidateName || '');
+    setCandidateEmail(record.candidateEmail || '');
+    setCandidatePhone(record.candidatePhone || '');
+    setCandidateSite(record.candidateSite || 'Cairo');
+    setAnswers(record.answers || {});
+    if (record.interviewerName) {
+      setInterviewerName(record.interviewerName);
+    }
+    setCurrentView('form');
+  };
+
+  const doResetForm = () => {
+    setEditingRecordId(null);
+    setInterviewerName('');
+    setCandidateName('');
+    setCandidateEmail('');
+    setCandidatePhone('');
+    setCandidateSite('Cairo');
+    setAnswers({});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleResetForm = () => {
+    if (editingRecordId) {
+      showConfirm("Reset Form", "Are you sure you want to cancel editing and reset the form to a fresh blank evaluation?", doResetForm);
+    } else {
+      showConfirm("Reset Form", "Are you sure you want to reload the clean original page and discard any entered details?", doResetForm);
+    }
+  };
+
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+
     if (!user) {
       setShowLoginModal(true);
       return;
     }
     
-    if (!candidateName || !interviewerName) {
-       return alert("Please provide at least Interviewer Name and Candidate Name");
+    if (!interviewerName.trim()) {
+      return showAlert("Missing Information", "Interviewer Name is required.", "alert");
     }
-
-    const newRecordId = Math.random().toString(36).substr(2, 9);
-    const newRecord: any = {
-      id: newRecordId,
-      date: new Date().toISOString(),
-      interviewerName,
-      candidateName,
-      candidateSite,
-      answers,
-      scoreInfo,
-      authorId: user.uid
-    };
-    if (candidateEmail) newRecord.candidateEmail = candidateEmail;
-    if (candidatePhone) newRecord.candidatePhone = candidatePhone;
+    if (!candidateName.trim()) {
+      return showAlert("Missing Information", "Candidate Name is required.", "alert");
+    }
+    if (!candidateSite.trim()) {
+      return showAlert("Missing Information", "Site is required.", "alert");
+    }
     
-    // Save locally first to guarantee zero-data-loss for sandbox/offline
-    const stored = localStorage.getItem('ultatel_evaluations');
-    let localDB: any[] = [];
-    if (stored) {
-      try {
-        localDB = JSON.parse(stored);
-      } catch (e) {}
-    }
-    localDB.unshift(newRecord);
-    localStorage.setItem('ultatel_evaluations', JSON.stringify(localDB));
-    localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
-
-    // Google Sheets real-time synchronization
-    if (sheetsConfig.syncEnabled && sheetsConfig.spreadsheetId) {
-      if (googleToken) {
-        appendRecordToSpreadsheet(googleToken, sheetsConfig.spreadsheetId, newRecord)
-          .then(() => console.log("Successfully synchronized record to connected Google Sheet real-time"))
-          .catch((err) => console.error("Real-time Sheets synchronization failed:", err));
-      } else {
-        console.warn("Real-time Sheets sync is active, but Google auth token has expired or is missing.");
+    if (candidateEmail.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(candidateEmail.trim())) {
+        return showAlert("Validation Error", "Please enter a valid candidate email address (e.g., name@domain.com).", "alert");
       }
     }
 
-    if (user.uid === 'local-sandbox-admin' || user.isSandbox) {
-      setDatabase(localDB);
-      setShowToast(true);
-      setTimeout(() => {
-        setShowToast(false);
-        setCandidateName('');
-        setCandidateEmail('');
-        setCandidatePhone('');
-        setCandidateSite('Cairo');
-        setAnswers({});
-        setCurrentView('db');
-      }, 1500);
-      return;
+    if (!candidatePhone.trim()) {
+      return showAlert("Missing Information", "Phone Number is required.", "alert");
     }
+
+    for (const section of sections) {
+      if (section.isInformational) continue;
+      for (const q of section.questions) {
+        let answer = answers[q.id];
+        if (q.type === 'rating' && answer && typeof answer === 'object' && answer.points !== undefined) {
+          // valid rating answer
+        } else if (answer === undefined || answer === null || (typeof answer === 'string' && answer.trim() === '')) {
+          return showAlert("Incomplete Evaluation", `Please answer all questions. Missing: "${q.text.substring(0, 50)}${q.text.length > 50 ? '...' : ''}"`, "alert");
+        }
+      }
+    }
+
+    setIsSubmitting(true);
     
     try {
-      await setDoc(doc(db, 'evaluations', newRecordId), newRecord);
-      setShowToast(true);
+      const isEdit = !!editingRecordId;
+      const targetId = editingRecordId || Math.random().toString(36).substr(2, 9);
+
+      // Maintain previous creation date on edit, otherwise set current time
+      let finalDate = new Date().toISOString();
+      if (isEdit) {
+        const originalRecord = filteredDatabase.find(r => r.id === targetId);
+        if (originalRecord) {
+          finalDate = originalRecord.date;
+        }
+      }
+
+      const newRecord: any = {
+        id: targetId,
+        date: finalDate,
+        interviewerName,
+        candidateName,
+        candidateSite,
+        answers,
+        scoreInfo,
+        authorId: user.uid
+      };
+      if (isEdit) {
+        newRecord.lastEditedAt = new Date().toISOString();
+      }
+      if (candidateEmail) newRecord.candidateEmail = candidateEmail;
+      if (candidatePhone) newRecord.candidatePhone = candidatePhone;
       
-      setTimeout(() => {
-        setShowToast(false);
-        setCandidateName('');
-        setCandidateEmail('');
-        setCandidatePhone('');
-        setCandidateSite('Cairo');
-        setAnswers({});
-        setCurrentView('db');
-      }, 1500);
-    } catch (e: any) {
-      console.warn("Error writing to Firestore, falling back to local database:", e);
-      alert(`Report saved to local database fallback (${e.message || 'Firestore offline'}). You can fully access it on this browser!`);
-      setDatabase(localDB);
-      setCurrentView('db');
+      // Save locally first to guarantee zero-data-loss for sandbox/offline
+      const stored = localStorage.getItem('ultatel_evaluations');
+      let localDB: any[] = [];
+      if (stored) {
+        try {
+          localDB = JSON.parse(stored);
+        } catch (e) {}
+      }
+
+      if (isEdit) {
+        localDB = localDB.map(r => r.id === targetId ? newRecord : r);
+      } else {
+        localDB.unshift(newRecord);
+      }
+
+      localStorage.setItem('ultatel_evaluations', JSON.stringify(localDB));
+      localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
+
+      // Google Sheets real-time synchronization
+      if (sheetsConfig.syncEnabled && sheetsConfig.spreadsheetId) {
+        if (googleToken) {
+          appendRecordToSpreadsheet(googleToken, sheetsConfig.spreadsheetId, newRecord)
+            .then(() => console.log("Successfully synchronized record to connected Google Sheet real-time"))
+            .catch((err) => console.error("Real-time Sheets synchronization failed:", err));
+        } else {
+          console.warn("Real-time Sheets sync is active, but Google auth token has expired or is missing.");
+        }
+      }
+
+      if (user.uid === 'local-sandbox-admin' || user.isSandbox) {
+        setDatabase(localDB);
+        setIsSubmitting(false);
+        doResetForm();
+        setCurrentView('form');
+        showAlert("Success", "Evaluation saved successfully!", "success");
+        return;
+      }
+      
+      try {
+        await setDoc(doc(db, 'evaluations', targetId), newRecord);
+        setDatabase(localDB);
+        setIsSubmitting(false);
+        doResetForm();
+        setCurrentView('form');
+        showAlert("Success", "Evaluation saved successfully to Cloud!", "success");
+      } catch (e: any) {
+        console.warn("Error writing to Firestore, falling back to local database:", e);
+        setDatabase(localDB);
+        setIsSubmitting(false);
+        doResetForm();
+        setCurrentView('form');
+        showAlert("Offline Fallback", `Report saved to local database fallback (${e.message || 'Firestore offline'}). You can fully access it on this browser!`, "success");
+      }
+    } catch (e) {
+      // In case of any unexpected critical failure that bypasses the normal catch
+      setIsSubmitting(false);
     }
   };
 
-  const handleDeleteRecord = async (id: string) => {
-    if (confirm('Are you sure you want to delete this evaluation?')) {
+  const handleDeleteRecord = (id: string) => {
+    showConfirm('Delete Evaluation', 'Are you sure you want to delete this evaluation?', async () => {
       // Delete locally
       const stored = localStorage.getItem('ultatel_evaluations');
       let localDB: any[] = [];
@@ -502,21 +664,23 @@ export default function App() {
         localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
       }
 
+      // Update state immediately so the deletion is reflected instantly on the UI
+      setDeletedRecordIds(prev => [...prev, id]);
+      setDatabase(localDB);
+      if (selectedRecordId === id) setSelectedRecordId(null);
+
       if (user?.uid === 'local-sandbox-admin' || user?.isSandbox) {
-        setDatabase(localDB);
-        if (selectedRecordId === id) setSelectedRecordId(null);
         return;
       }
 
       try {
         await deleteDoc(doc(db, 'evaluations', id));
-        if (selectedRecordId === id) setSelectedRecordId(null);
       } catch (e) {
         console.warn("Deleted locally, firestore delete failed (mock mode or permission issue):", e);
+        // Even if Firestore remote delete fails/is offline, keep the local UI updated
         setDatabase(localDB);
-        if (selectedRecordId === id) setSelectedRecordId(null);
       }
-    }
+    });
   };
 
   const handleViewRecord = (id: string) => {
@@ -524,17 +688,23 @@ export default function App() {
     setCurrentView('detail');
   };
 
+  const filteredDatabase = useMemo(() => {
+    return database.filter(r => !deletedRecordIds.includes(r.id));
+  }, [database, deletedRecordIds]);
+
   const selectedRecord = useMemo(() => {
-    return database.find(r => r.id === selectedRecordId);
-  }, [selectedRecordId, database]);
+    return filteredDatabase.find(r => r.id === selectedRecordId);
+  }, [selectedRecordId, filteredDatabase]);
 
   // Calculate scores
   const scoreInfo = useMemo(() => {
     let total = 0;
     let sec3 = 0; // Mindset (30)
     let sec4 = 0; // Honesty (20)
+    let sec5 = 0; // Discipline & Commitment (15)
     let sec6 = 0; // Coachability (15)
     let sec7 = 0; // Communication (15)
+    let sec8 = 0; // Retention Risk (5)
 
     const addScore = (qId: string, sectionId: string) => {
       const val = answers[qId] as number;
@@ -542,8 +712,10 @@ export default function App() {
         total += val;
         if (sectionId === 'sec3') sec3 += val;
         if (sectionId === 'sec4') sec4 += val;
+        if (sectionId === 'sec5') sec5 += val;
         if (sectionId === 'sec6') sec6 += val;
         if (sectionId === 'sec7') sec7 += val;
+        if (sectionId === 'sec8') sec8 += val;
       }
     };
 
@@ -565,6 +737,8 @@ export default function App() {
 
     const isMindsetFail = sec3 && sec3 < 22; // Must be 22/30+
     const isHonestyFail = sec4 && sec4 < 15; // Must be 15/20+
+    const isDisciplineFail = sec5 && sec5 < 11; // Must be 11/15+
+    const isRetentionFail = sec8 && sec8 < 4; // Must be 4/5+
     
     // Automatic Red flags checking
     const q32Val = answers['q32']; // Do they seem honest when performance is weak?
@@ -576,7 +750,7 @@ export default function App() {
     if (q34Val === 'No') autoFails.push("Candidate does not accept correction without ego.");
     if (q37Val === 'No') autoFails.push("Do not believe candidate will stay after training gets difficult.");
 
-    return { total, sec3, sec4, sec6, sec7, rec, color, isMindsetFail, isHonestyFail, autoFails };
+    return { total, sec3, sec4, sec5, sec6, sec7, sec8, rec, color, isMindsetFail, isHonestyFail, isDisciplineFail, isRetentionFail, autoFails };
   }, [answers]);
 
   return (
@@ -722,9 +896,10 @@ export default function App() {
           <div className="max-w-6xl mx-auto">
             {currentView === 'db' && (
               <DatabaseView 
-                data={database} 
+                data={filteredDatabase} 
                 onDelete={handleDeleteRecord} 
                 onView={handleViewRecord}
+                onEdit={handleEditRecord}
                 sheetsConfig={sheetsConfig}
                 setSheetsConfig={setSheetsConfig}
                 googleToken={googleToken}
@@ -733,11 +908,15 @@ export default function App() {
             )}
 
             {currentView === 'analytics' && (
-              <AnalyticsView data={database} />
+              <AnalyticsView data={filteredDatabase} />
             )}
 
             {currentView === 'detail' && selectedRecord && (
-              <RecordDetailView record={selectedRecord} onBack={() => setCurrentView('db')} />
+              <RecordDetailView 
+                record={selectedRecord} 
+                onBack={() => setCurrentView('db')} 
+                onEdit={handleEditRecord}
+              />
             )}
 
             {currentView === 'form' && (
@@ -746,23 +925,72 @@ export default function App() {
                 {/* Main Form Area */}
                 <div className="flex-1 space-y-8 min-w-0 w-full">
                   <header className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200">
-                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">BDR Interview Guide</h1>
-                    <p className="mt-2 text-sm text-slate-500 font-medium">Business Development Representative Scorecard</p>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100">
+                      <div>
+                        {editingRecordId ? (
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black rounded-md uppercase tracking-wider mb-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            Editing Existing Candidate Report
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-black rounded-md uppercase tracking-wider mb-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            New Evaluation Mode
+                          </div>
+                        )}
+                        <h1 className="text-2xl font-black text-slate-900 tracking-tight">BDR Interview Guide</h1>
+                        <p className="mt-1.5 text-xs text-slate-500 font-medium">Business Development Representative Scorecard</p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {(editingRecordId || candidateName || candidateEmail || candidatePhone || Object.keys(answers).length > 0) && (
+                          <button
+                            type="button"
+                            onClick={handleResetForm}
+                            className="flex items-center gap-2 px-3 py-2 text-xs font-black text-slate-600 hover:text-red-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg transition-all"
+                            title="Reset entire form to a blank state and discard current answers"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Reload Clean Form (Start Fresh)
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     
                     <div className="mt-8 border-b border-slate-100 pb-6 mb-6">
-                       <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">Interviewer Name</label>
-                       <input 
-                          type="text" 
-                          className="w-full sm:w-1/2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none transition-all text-sm font-medium" 
+                       <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">
+                         Interviewer Name <span className="text-red-500 font-extrabold">*</span>
+                       </label>
+                       <select 
+                          className="w-full sm:w-1/2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none transition-all text-sm font-medium appearance-none" 
                           value={interviewerName}
                           onChange={(e) => setInterviewerName(e.target.value)}
-                          placeholder="E.g. Jordan Davis"
-                       />
+                       >
+                          <option value="" disabled>Select Interviewer</option>
+                          <option value="Adam Gibson">Adam Gibson</option>
+                          <option value="Steven Wilson">Steven Wilson</option>
+                          <option value="Merna Hany">Merna Hany</option>
+                          <option value="Frank Smith">Frank Smith</option>
+                          <option value="Alex Smith">Alex Smith</option>
+                          <option value="Ivy Robinson">Ivy Robinson</option>
+                          <option value="AJ James">AJ James</option>
+                          <option value="Josh Alt">Josh Alt</option>
+                          <option value="Tom Miller">Tom Miller</option>
+                          <option value="Sam">Sam</option>
+                          <option value="Scott Cowell">Scott Cowell</option>
+                          <option value="Matt Miller">Matt Miller</option>
+                          <option value="August Swift">August Swift</option>
+                          <option value="Mariem">Mariem</option>
+                          <option value="Sophia">Sophia</option>
+                          <option value="Nadine">Nadine</option>
+                       </select>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                       <div>
-                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">Candidate Name</label>
+                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">
+                          Candidate Name <span className="text-red-500 font-extrabold">*</span>
+                        </label>
                         <input 
                           type="text" 
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none transition-all text-sm font-medium" 
@@ -772,7 +1000,9 @@ export default function App() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">Site</label>
+                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">
+                          Site <span className="text-red-500 font-extrabold">*</span>
+                        </label>
                         <select
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none transition-all text-sm font-medium"
                           value={candidateSite}
@@ -783,7 +1013,9 @@ export default function App() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">Email Address</label>
+                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">
+                          Email Address
+                        </label>
                         <input 
                           type="email" 
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none transition-all text-sm font-medium" 
@@ -793,7 +1025,9 @@ export default function App() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">Phone Number</label>
+                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">
+                          Phone Number <span className="text-red-500 font-extrabold">*</span>
+                        </label>
                         <input 
                           type="tel" 
                           className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none transition-all text-sm font-medium" 
@@ -840,12 +1074,21 @@ export default function App() {
                       <div className="space-y-8">
                         {section.questions.map((q) => (
                           <div key={q.id} className="space-y-4 group">
-                            <div className="flex justify-between items-start">
+                            <div className="flex justify-between items-start gap-4">
                               <h3 className="font-bold text-slate-900 text-[15px] flex gap-3 leading-snug">
                                 <span className="text-brand-blue-light">{q.id.replace('q', '')}.</span>
                                 <span>{q.text}</span>
                               </h3>
-                              {q.type === 'rating' && <span className="px-2.5 py-1 bg-slate-100 text-slate-500 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 mt-1">Rate</span>}
+                              <div className="flex items-center gap-2 shrink-0 mt-1">
+                                {q.type === 'rating' && <span className="px-2.5 py-1 bg-slate-100 text-slate-500 rounded-md text-[10px] font-bold uppercase tracking-wider">Rate</span>}
+                                {answers[q.id] === undefined || answers[q.id] === null || (typeof answers[q.id] === 'string' && answers[q.id].trim() === '') ? (
+                                  <span className="px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200 text-[10px] font-black uppercase tracking-widest shrink-0 animate-pulse">Required</span>
+                                ) : (
+                                  <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded border border-emerald-200 text-[10px] font-black uppercase tracking-widest shrink-0 flex items-center gap-1">
+                                    Done <Check className="w-3.5 h-3.5" />
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             {q.clarification && (
                               <p className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100 ml-6 flex gap-2 font-medium">
@@ -907,32 +1150,84 @@ export default function App() {
                               )}
 
                               {q.type === 'rating' && (
-                                <div className="grid grid-cols-1 gap-3">
-                                  {(q.options as RatingOption[]).map((opt) => (
-                                    <button
-                                      key={opt.points}
-                                      onClick={() => handleAnswer(q.id, opt.points)}
-                                      className={`w-full text-left p-4 rounded-lg border transition-all flex items-start gap-4 ${
-                                        answers[q.id] === opt.points
-                                          ? 'bg-brand-light/30 border-brand-blue shadow-sm ring-1 ring-brand-blue'
-                                          : 'border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                                      }`}
-                                    >
-                                      <div className={`mt-0.5 w-6 h-6 rounded-full border shrink-0 flex items-center justify-center transition-colors ${
-                                        answers[q.id] === opt.points ? 'border-brand-blue bg-brand-blue' : 'border-slate-300 bg-white'
-                                      }`}>
-                                        {answers[q.id] === opt.points && <Check className="w-3.5 h-3.5 text-white" />}
-                                      </div>
-                                      <div>
-                                        <div className={`text-sm ${answers[q.id] === opt.points ? 'font-black text-brand-blue' : 'font-bold text-slate-700'}`}>
-                                          {opt.label} <span className="opacity-60 ml-2 font-semibold">({opt.points} pts)</span>
-                                        </div>
-                                        <div className={`text-xs mt-1 leading-relaxed ${answers[q.id] === opt.points ? 'text-brand-blue/80 font-medium' : 'text-slate-500 font-medium'}`}>
-                                          {opt.text}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  ))}
+                                <div className="space-y-4">
+                                  {/* 1 to 5 rating buttons bar */}
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    {[1, 2, 3, 4, 5].map((pts) => {
+                                      const isSelected = answers[q.id] === pts;
+                                      let btnStyles = "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300";
+                                      if (isSelected) {
+                                        if (pts >= 4) {
+                                          btnStyles = "bg-green-600 border-green-600 text-white shadow-md ring-2 ring-green-600/20 font-black scale-105";
+                                        } else if (pts === 3) {
+                                          btnStyles = "bg-amber-500 border-amber-500 text-white shadow-md ring-2 ring-amber-500/20 font-black scale-105";
+                                        } else {
+                                          btnStyles = "bg-red-500 border-red-500 text-white shadow-md ring-2 ring-red-500/20 font-black scale-105";
+                                        }
+                                      }
+                                      return (
+                                        <button
+                                          key={pts}
+                                          type="button"
+                                          onClick={() => handleAnswer(q.id, pts)}
+                                          className={`w-12 h-12 rounded-xl border text-base font-bold transition-all flex items-center justify-center ${btnStyles}`}
+                                        >
+                                          {pts}
+                                        </button>
+                                      );
+                                    })}
+                                    {answers[q.id] && (
+                                      <span className="text-xs font-bold text-slate-500 italic ml-2">
+                                        Selected: {answers[q.id]} / 5 points
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Evaluation Guidelines Hints */}
+                                  <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-100/80 space-y-3">
+                                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Evaluation Guidelines (Acuity Hints)</div>
+                                    <div className="space-y-2.5 text-xs">
+                                      {/* Stronger (5) */}
+                                      {(() => {
+                                        const strong = (q.options as RatingOption[])?.find(o => o.points === 5);
+                                        if (strong) {
+                                          return (
+                                            <div className="flex items-start gap-2.5">
+                                              <span className="px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-[9px] font-black h-fit shrink-0 tracking-wider">Stronger (5)</span>
+                                              <span className="text-slate-600 leading-normal font-medium">{strong.text}</span>
+                                            </div>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                      {/* Average (3) */}
+                                      {(() => {
+                                        const avg = (q.options as RatingOption[])?.find(o => o.points === 3);
+                                        if (avg) {
+                                          return (
+                                            <div className="flex items-start gap-2.5">
+                                              <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-black h-fit shrink-0 tracking-wider">Average (3)</span>
+                                              <span className="text-slate-600 leading-normal font-medium">{avg.text}</span>
+                                            </div>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                      {/* Weak (1) */}
+                                      {(() => {
+                                        const weak = (q.options as RatingOption[])?.find(o => o.points === 1);
+                                        if (weak) {
+                                          return (
+                                            <div className="flex items-start gap-2.5">
+                                              <span className="px-1.5 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-[9px] font-black h-fit shrink-0 tracking-wider">Weak (1)</span>
+                                              <span className="text-slate-600 leading-normal font-medium">{weak.text}</span>
+                                            </div>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -942,13 +1237,7 @@ export default function App() {
                     </div>
                   ))}
 
-                  {/* Action Footer */}
-                  <div className="py-8 flex justify-end">
-                    <button onClick={handleSubmit} className="px-8 py-3.5 bg-brand-yellow text-slate-900 text-sm font-black rounded-lg shadow-md hover:bg-yellow-400 transition-all hover:-translate-y-0.5 uppercase tracking-widest flex items-center gap-2">
-                       <CheckCircle2 className="w-5 h-5" />
-                       Submit Evaluation
-                    </button>
-                  </div>
+                  {/* Action Footer Removed to avoid duplication with sidebar */}
                 </div>
 
                 {/* Sticky Scoreboard Sidebar */}
@@ -999,6 +1288,15 @@ export default function App() {
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
+                            <span className="text-slate-600">Discipline & Commitment (11/15)</span>
+                            <span className={(scoreInfo.sec5 ?? 0) >= 11 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec5 ?? 0}/15</span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full transition-all duration-500 ${(scoreInfo.sec5 ?? 0) >= 11 ? 'bg-green-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(((scoreInfo.sec5 ?? 0) / 15) * 100, 100)}%` }}></div>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs font-bold">
                             <span className="text-slate-600">Coachability (11/15)</span>
                             <span className={scoreInfo.sec6 >= 11 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec6}/15</span>
                           </div>
@@ -1013,6 +1311,15 @@ export default function App() {
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                             <div className={`h-full transition-all duration-500 ${scoreInfo.sec7 >= 10 ? 'bg-green-500' : 'bg-amber-500'}`} style={{ width: `${Math.min((scoreInfo.sec7 / 15) * 100, 100)}%` }}></div>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs font-bold">
+                            <span className="text-slate-600">Retention Risk (4/5)</span>
+                            <span className={(scoreInfo.sec8 ?? 0) >= 4 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec8 ?? 0}/5</span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full transition-all duration-500 ${(scoreInfo.sec8 ?? 0) >= 4 ? 'bg-green-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(((scoreInfo.sec8 ?? 0) / 5) * 100, 100)}%` }}></div>
                           </div>
                         </div>
                       </div>
@@ -1050,13 +1357,18 @@ export default function App() {
                       )}
                     </div>
 
-                    <button 
-                      onClick={handleSubmit} 
-                      className="w-full py-4 bg-brand-yellow text-slate-900 font-black rounded-lg mt-8 hover:bg-yellow-400 transition-all uppercase tracking-widest text-[11px] shadow-sm hover:shadow-md hover:-translate-y-0.5 duration-200 flex justify-center items-center gap-2"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Complete Evaluation
-                    </button>
+                    {/* Convenient Sticky Sidebar Submission Button */}
+                    <div className="mt-6 pt-6 border-t border-slate-100 shrink-0">
+                      <button 
+                        onClick={handleSubmit} 
+                        disabled={isSubmitting}
+                        className={`w-full py-4 text-slate-900 text-sm font-black rounded-lg shadow-md transition-all uppercase tracking-widest flex items-center justify-center gap-2 ${isSubmitting ? 'bg-yellow-300 opacity-70 cursor-not-allowed' : 'bg-brand-yellow hover:bg-yellow-400 hover:-translate-y-0.5 animate-pulse'}`}
+                      >
+                        {!isSubmitting && <CheckCircle2 className="w-5 h-5 shrink-0" />}
+                        {isSubmitting ? "Successful Submit..." : (editingRecordId ? "Resubmit Evaluation" : "Complete Evaluation")}
+                      </button>
+                    </div>
+
                   </div>
                 </div>
 
@@ -1074,6 +1386,44 @@ export default function App() {
             <div>
               <div className="font-bold text-sm tracking-wide">Evaluation Submitted</div>
               <div className="text-xs text-slate-400 mt-0.5 font-medium">The evaluation for {candidateName || 'the candidate'} has been saved successfully.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Dialog Modal */}
+        {dialogConfig.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className={`p-4 ${dialogConfig.type === 'alert' ? 'bg-red-50 text-red-700 border-b border-red-100' : dialogConfig.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-b border-emerald-100' : 'bg-brand-light text-brand-blue border-b border-brand-blue/10'}`}>
+                <h3 className="font-extrabold flex items-center gap-2">
+                  {dialogConfig.type === 'alert' && <AlertTriangle className="w-5 h-5" />}
+                  {dialogConfig.type === 'success' && <CheckCircle2 className="w-5 h-5" />}
+                  {dialogConfig.type === 'confirm' && <AlertTriangle className="w-5 h-5" />}
+                  {dialogConfig.title}
+                </h3>
+              </div>
+              <div className="p-5 text-sm text-slate-600 font-medium leading-relaxed">
+                {dialogConfig.message}
+              </div>
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                {dialogConfig.type === 'confirm' && (
+                  <button 
+                    onClick={() => setDialogConfig(prev => ({ ...prev, isOpen: false }))}
+                    className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button 
+                  onClick={() => {
+                    setDialogConfig(prev => ({ ...prev, isOpen: false }));
+                    if (dialogConfig.onConfirm) dialogConfig.onConfirm();
+                  }}
+                  className={`px-4 py-2 text-sm font-bold text-white rounded transition-colors ${dialogConfig.type === 'alert' ? 'bg-red-600 hover:bg-red-700' : dialogConfig.type === 'success' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-brand-blue hover:bg-brand-blue-light'}`}
+                >
+                  {dialogConfig.type === 'confirm' ? 'Confirm' : 'OK'}
+                </button>
+              </div>
             </div>
           </div>
         )}

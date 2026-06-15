@@ -117,8 +117,10 @@ export async function appendRecordToSpreadsheet(accessToken: string, spreadsheet
     record.scoreInfo?.rec || "",
     record.scoreInfo?.sec3 || 0,
     record.scoreInfo?.sec4 || 0,
+    record.scoreInfo?.sec5 || 0,
     record.scoreInfo?.sec6 || 0,
     record.scoreInfo?.sec7 || 0,
+    record.scoreInfo?.sec8 || 0,
     redFlags
   ];
 

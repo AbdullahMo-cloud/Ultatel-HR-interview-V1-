@@ -34,5 +34,7 @@ export interface EvaluationRecord {
   candidateSite?: string;
   answers: Record<string, any>;
   scoreInfo: any;
+  authorId?: string;
+  lastEditedAt?: string;
 }
 
