@@ -1,9 +1,8 @@
 {
-  "projectId": "spatial-robot-xzp7b",
-  "appId": "1:4645372705:web:f47709375b6518dd347460",
-  "apiKey": "AIzaSyAQlTSQIGOcSQE45IS4QunMxmIiU-DwNZs",
-  "authDomain": "spatial-robot-xzp7b.firebaseapp.com",
-  "storageBucket": "spatial-robot-xzp7b.firebasestorage.app",
-  "messagingSenderId": "4645372705",
-  "measurementId": ""
+  "apiKey": "AIzaSyAS4t43Y1UZPhxX4xk8j-YoPH5HdfoRaME",
+  "authDomain": "hr-system-34c2c.firebaseapp.com",
+  "projectId": "hr-system-34c2c",
+  "storageBucket": "hr-system-34c2c.firebasestorage.app",
+  "messagingSenderId": "577075216730",
+  "appId": "1:577075216730:web:88a6d7ab747b734bac3363"
 }
