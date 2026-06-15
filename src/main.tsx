@@ -1,61 +1,22 @@
-// Ensure window.fetch has both a getter and a setter to prevent "TypeError: Cannot set property fetch of #<Window> which has only a getter"
+// Ensure window.fetch has a configurable getter and a setter to prevent fetch assignment errors in Sandbox environments
 try {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && window.fetch) {
     const originalFetch = window.fetch;
     let currentFetch = originalFetch;
-
     const descriptor = {
-      get() {
-        return currentFetch;
-      },
-      set(val: any) {
-        currentFetch = val;
-      },
+      get() { return currentFetch; },
+      set(val: any) { currentFetch = val; },
       configurable: true,
       enumerable: true
     };
-
-    // Try defining on window itself
-    let success = false;
     try {
       Object.defineProperty(window, 'fetch', descriptor);
-      success = true;
     } catch (e) {
-      console.warn("Could not define fetch on window directly, trying prototype:", e);
-    }
-
-    // Try defining on Window prototype if direct define failed or just to be safe
-    if (!success) {
-      try {
-        const proto = Object.getPrototypeOf(window);
-        if (proto) {
-          Object.defineProperty(proto, 'fetch', descriptor);
-        }
-      } catch (protoErr) {
-        console.warn("Could not define fetch on prototype:", protoErr);
-      }
-    }
-
-    // Define on self
-    if (typeof self !== 'undefined') {
-      try {
-        Object.defineProperty(self, 'fetch', descriptor);
-      } catch (e) {
-        console.warn("Could not define fetch on self:", e);
-      }
-    }
-
-    // Define on globalThis
-    if (typeof globalThis !== 'undefined') {
-      try {
-        Object.defineProperty(globalThis, 'fetch', descriptor);
-      } catch (e) {
-        console.warn("Could not define fetch on globalThis:", e);
-      }
+      // Ignored if non-configurable or already configured by early script
     }
   }
 } catch (globalErr) {
-  console.warn("Global fetch wrapper installation failed:", globalErr);
+  console.warn("Global fetch preparation failed:", globalErr);
 }
 
 import {StrictMode} from 'react';

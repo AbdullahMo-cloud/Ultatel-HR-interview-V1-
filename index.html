@@ -1,6 +1,36 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      (function() {
+        try {
+          var originalFetch = window.fetch;
+          if (originalFetch) {
+            var currentFetch = originalFetch;
+            var descriptor = {
+              get: function() { return currentFetch; },
+              set: function(val) { currentFetch = val; },
+              configurable: true,
+              enumerable: true
+            };
+            try {
+              Object.defineProperty(window, 'fetch', descriptor);
+            } catch (e1) {
+              try {
+                var proto = Object.getPrototypeOf(window);
+                if (proto) {
+                  Object.defineProperty(proto, 'fetch', descriptor);
+                }
+              } catch (e2) {
+                console.warn("Could not define fetch on prototype:", e2);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Early fetch hook failed:", e);
+        }
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>

@@ -5,6 +5,7 @@ import { CheckCircle2, AlertTriangle, ShieldX, Check, Database, Plus, PieChart, 
 import DatabaseView from './DatabaseView';
 import RecordDetailView from './RecordDetailView';
 import AnalyticsView from './AnalyticsView';
+import { appendRecordToSpreadsheet } from './sheetsService';
 import { auth, db } from './firebase';
 import { 
   signInWithPopup, 
@@ -23,6 +24,52 @@ export default function App() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   
   const [interviewerName, setInterviewerName] = useState('');
+  
+  // Google Sheets states
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [sheetsConfig, setSheetsConfig] = useState<{
+    spreadsheetId: string | null;
+    spreadsheetUrl: string | null;
+    spreadsheetTitle: string | null;
+    syncEnabled: boolean;
+  }>(() => {
+    const saved = localStorage.getItem('ultatel_sheets_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      spreadsheetId: null,
+      spreadsheetUrl: null,
+      spreadsheetTitle: null,
+      syncEnabled: false
+    };
+  });
+
+  // Persist sheets config
+  useEffect(() => {
+    localStorage.setItem('ultatel_sheets_config', JSON.stringify(sheetsConfig));
+  }, [sheetsConfig]);
+
+  const onAuthorizeSheets = async (): Promise<string | null> => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleToken(credential.accessToken);
+        setUser(result.user);
+        return credential.accessToken;
+      }
+      return null;
+    } catch (err: any) {
+      console.error("Sheets authorization failed:", err);
+      alert(`Authorization failed: ${err.message || err}`);
+      return null;
+    }
+  };
   const [candidateName, setCandidateName] = useState('');
   const [candidateEmail, setCandidateEmail] = useState('');
   const [candidatePhone, setCandidatePhone] = useState('');
@@ -119,7 +166,12 @@ export default function App() {
     setIsLoginLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleToken(credential.accessToken);
+      }
       setShowLoginModal(false);
     } catch (e: any) {
       console.error(e);
@@ -241,6 +293,17 @@ export default function App() {
     localDB.unshift(newRecord);
     localStorage.setItem('ultatel_evaluations', JSON.stringify(localDB));
     localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
+
+    // Google Sheets real-time synchronization
+    if (sheetsConfig.syncEnabled && sheetsConfig.spreadsheetId) {
+      if (googleToken) {
+        appendRecordToSpreadsheet(googleToken, sheetsConfig.spreadsheetId, newRecord)
+          .then(() => console.log("Successfully synchronized record to connected Google Sheet real-time"))
+          .catch((err) => console.error("Real-time Sheets synchronization failed:", err));
+      } else {
+        console.warn("Real-time Sheets sync is active, but Google auth token has expired or is missing.");
+      }
+    }
 
     if (user.uid === 'local-sandbox-admin' || user.isSandbox) {
       setDatabase(localDB);
@@ -484,7 +547,15 @@ export default function App() {
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-6xl mx-auto">
             {currentView === 'db' && (
-              <DatabaseView data={database} onDelete={handleDeleteRecord} onView={handleViewRecord} />
+              <DatabaseView 
+                data={database} 
+                onDelete={handleDeleteRecord} 
+                onView={handleViewRecord}
+                sheetsConfig={sheetsConfig}
+                setSheetsConfig={setSheetsConfig}
+                googleToken={googleToken}
+                onAuthorizeSheets={onAuthorizeSheets}
+              />
             )}
 
             {currentView === 'analytics' && (
