@@ -7,6 +7,7 @@ import RecordDetailView from './RecordDetailView';
 import AnalyticsView from './AnalyticsView';
 import { appendRecordToSpreadsheet } from './sheetsService';
 import { auth, db } from './firebase';
+import firebaseConfig from '../firebase-applet-config.json';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -56,6 +57,7 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      provider.addScope('https://www.googleapis.com/auth/contacts.readonly');
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
@@ -66,6 +68,12 @@ export default function App() {
       return null;
     } catch (err: any) {
       console.error("Sheets authorization failed:", err);
+      if (err.code === 'auth/unauthorized-domain') {
+        const domain = window.location.hostname;
+        const msg = `Unauthorized Domain: The preview domain "${domain}" has not been authorized in Firebase. Please add "${domain}" to authorized domains in Firebase Console (project ID: ${firebaseConfig.projectId}) under Authentication -> Settings -> Authorized domains.`;
+        alert(msg);
+        throw new Error(msg);
+      }
       alert(`Authorization failed: ${err.message || err}`);
       return null;
     }
@@ -85,7 +93,7 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const [loginError, setLoginError] = useState<React.ReactNode | string>('');
   const [isLoginLoading, setIsLoginLoading] = useState(false);
 
   // Initialize and check local storage user if present
@@ -167,6 +175,7 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      provider.addScope('https://www.googleapis.com/auth/contacts.readonly');
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
@@ -177,12 +186,82 @@ export default function App() {
       console.error(e);
       if (e.code === 'auth/popup-closed-by-user') {
         setLoginError("Sign-in cancelled. Popup closed.");
+      } else if (e.code === 'auth/unauthorized-domain') {
+        const domain = window.location.hostname;
+        setLoginError(
+          <div className="space-y-2 text-left text-red-700 bg-red-50 p-3 rounded-xl border border-red-100">
+            <p className="font-extrabold text-xs flex items-center gap-1.5 text-red-800 uppercase tracking-wide">
+              <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-red-500" />
+              Firebase Domain Blocked
+            </p>
+            <p className="text-[11px] font-medium text-slate-600 leading-normal">
+              Firebase Auth blocks Google login from this preview URL. To resolve:
+            </p>
+            <ol className="list-decimal pl-4 space-y-1 text-[11px] text-slate-600 font-semibold leading-normal">
+              <li>Open your <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-brand-blue underline hover:text-brand-blue-light font-extrabold">Firebase Console</a></li>
+              <li>Select your project <strong>{firebaseConfig.projectId}</strong></li>
+              <li>Navigate to <strong>Authentication &gt; Settings &gt; Authorized domains</strong></li>
+              <li>Click <strong>Add domain</strong> and copy-paste:</li>
+            </ol>
+            <div className="bg-white p-2 rounded border border-red-100 select-all font-mono text-[10px] text-red-700 break-all font-black text-center">
+              {domain}
+            </div>
+            <p className="text-[10.5px] text-slate-500 font-semibold leading-normal pt-1 italic">
+              💡 Or continue immediately by using <strong>Email &amp; Password</strong> below, or click <strong>Launch Guest Sandbox</strong>!
+            </p>
+          </div>
+        );
+      } else if (e.code === 'auth/operation-not-allowed') {
+        setLoginError(
+          <div className="space-y-2 text-left text-red-700 bg-red-50 p-3 rounded-xl border border-red-100">
+            <p className="font-extrabold text-xs flex items-center gap-1.5 text-red-800 uppercase tracking-wide">
+              <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-red-500" />
+              Provider Disabled in Firebase
+            </p>
+            <p className="text-[11px] font-medium text-slate-600 leading-normal">
+              The <strong>Google</strong> sign-in method is not enabled in your Firebase project. To enable it:
+            </p>
+            <ol className="list-decimal pl-4 space-y-1 text-[11px] text-slate-600 font-semibold leading-normal">
+              <li>Open your <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-brand-blue underline hover:text-brand-blue-light font-extrabold">Firebase Console</a></li>
+              <li>Select project <strong>{firebaseConfig.projectId}</strong></li>
+              <li>Go to <strong>Authentication &gt; Sign-in method</strong></li>
+              <li>Click <strong>Add new provider</strong>, select <strong>Google</strong>, and toggle <strong>Enable</strong>!</li>
+            </ol>
+            <p className="text-[10.5px] text-slate-500 font-semibold leading-normal pt-1 italic">
+              💡 Or continue immediately by clicking <strong>Launch Live Demo Sandbox</strong> below!
+            </p>
+          </div>
+        );
       } else {
         setLoginError(`Google Sign-In failed: ${e.message}`);
       }
     } finally {
       setIsLoginLoading(false);
     }
+  };
+
+  // Helper for rendering Email Provider disable explanation
+  const renderEmailProviderWarning = () => {
+    setLoginError(
+      <div className="space-y-2 text-left text-red-700 bg-red-50 p-3 rounded-xl border border-red-100">
+        <p className="font-extrabold text-xs flex items-center gap-1.5 text-red-800 uppercase tracking-wide">
+          <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-red-500" />
+          Email Sign-In Disabled
+        </p>
+        <p className="text-[11px] font-medium text-slate-600 leading-normal">
+          The <strong>Email/Password</strong> sign-in method is not enabled in your Firebase project. To enable it:
+        </p>
+        <ol className="list-decimal pl-4 space-y-1 text-[11px] text-slate-600 font-semibold leading-normal">
+          <li>Open your <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-brand-blue underline hover:text-brand-blue-light font-extrabold">Firebase Console</a></li>
+          <li>Select project <strong>{firebaseConfig.projectId}</strong></li>
+          <li>Go to <strong>Authentication &gt; Sign-in method</strong></li>
+          <li>Click <strong>Add new provider</strong>, select <strong>Email/Password</strong>, and toggle <strong>Enable</strong>!</li>
+        </ol>
+        <p className="text-[10.5px] text-slate-500 font-semibold leading-normal pt-1 italic">
+          💡 Or continue immediately by clicking <strong>Launch Live Demo Sandbox</strong> below!
+        </p>
+      </div>
+    );
   };
 
   // Sign In or Auto Sign Up with Email/Password
@@ -200,13 +279,18 @@ export default function App() {
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
       setShowLoginModal(false);
     } catch (signInErr: any) {
-      // If user doesn't exist, try to auto-register them
-      if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
+      if (signInErr.code === 'auth/operation-not-allowed') {
+        renderEmailProviderWarning();
+      } else if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
         try {
           await createUserWithEmailAndPassword(auth, loginEmail, loginPassword);
           setShowLoginModal(false);
         } catch (signUpErr: any) {
-          setLoginError(`Authentication failed: ${signUpErr.message}`);
+          if (signUpErr.code === 'auth/operation-not-allowed') {
+            renderEmailProviderWarning();
+          } else {
+            setLoginError(`Authentication failed: ${signUpErr.message}`);
+          }
         }
       } else {
         setLoginError(`Authentication failed: ${signInErr.message}`);
