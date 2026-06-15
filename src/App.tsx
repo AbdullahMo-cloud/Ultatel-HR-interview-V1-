@@ -86,7 +86,24 @@ export default function App() {
   const [showToast, setShowToast] = useState(false);
   
   const [database, setDatabase] = useState<EvaluationRecord[]>([]);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>(() => {
+    const localUserStr = localStorage.getItem('ultatel_local_user');
+    if (localUserStr) {
+      try {
+        return JSON.parse(localUserStr);
+      } catch (e) {
+        localStorage.removeItem('ultatel_local_user');
+      }
+    }
+    // Default to a 150% free Sandbox/Guest account out-of-the-box so users are never gated or blocked by deployment setup
+    return {
+      uid: 'local-sandbox-admin',
+      displayName: 'Guest HR Admin',
+      email: 'sandbox@ultatel.com',
+      isSandbox: true,
+      photoURL: ''
+    };
+  });
   const [authChecking, setAuthChecking] = useState(true);
 
   // Custom login state
@@ -98,21 +115,28 @@ export default function App() {
 
   // Initialize and check local storage user if present
   useEffect(() => {
-    const localUserStr = localStorage.getItem('ultatel_local_user');
-    if (localUserStr) {
-      try {
-        setUser(JSON.parse(localUserStr));
-        setAuthChecking(false);
-      } catch (e) {
-        localStorage.removeItem('ultatel_local_user');
-      }
-    }
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       // Standard firebase user state overrides local mock ONLY if currentUser is present
       if (currentUser) {
         setUser(currentUser);
         localStorage.removeItem('ultatel_local_user'); // Clear local temp session to prioritize real session
+      } else {
+        const localUserStr = localStorage.getItem('ultatel_local_user');
+        if (localUserStr) {
+          try {
+            setUser(JSON.parse(localUserStr));
+          } catch (e) {
+            localStorage.removeItem('ultatel_local_user');
+          }
+        } else {
+          setUser({
+            uid: 'local-sandbox-admin',
+            displayName: 'Guest HR Admin',
+            email: 'sandbox@ultatel.com',
+            isSandbox: true,
+            photoURL: ''
+          });
+        }
       }
       setAuthChecking(false);
     });
@@ -335,7 +359,13 @@ export default function App() {
   const handleLogout = () => {
     signOut(auth);
     localStorage.removeItem('ultatel_local_user');
-    setUser(null);
+    setUser({
+      uid: 'local-sandbox-admin',
+      displayName: 'Guest HR Admin',
+      email: 'sandbox@ultatel.com',
+      isSandbox: true,
+      photoURL: ''
+    });
   };
 
   const handleAnswer = (questionId: string, value: any) => {
@@ -573,25 +603,54 @@ export default function App() {
            </nav>
         </div>
 
-        <div className="mt-auto p-4 border-t border-slate-100 flex items-center justify-between gap-3">
+        <div className="mt-auto p-4 border-t border-slate-100 flex flex-col gap-3">
           {user ? (
             <>
-              <div className="flex items-center gap-3 overflow-hidden">
-                <div className="w-8 h-8 rounded-full bg-brand-light flex items-center justify-center shrink-0">
-                  {user.photoURL ? (
-                    <img src={user.photoURL} alt="" className="w-full h-full rounded-full" />
+              <div className="flex items-center justify-between gap-3 w-full">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${user.isSandbox ? 'bg-amber-100/60 border border-amber-200' : 'bg-brand-light'}`}>
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="" className="w-full h-full rounded-full" />
+                    ) : (
+                      <User className={`w-4 h-4 ${user.isSandbox ? 'text-amber-600 font-bold' : 'text-brand-blue'}`} />
+                    )}
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="text-xs font-black text-slate-900 truncate">{user.displayName || 'Guest HR Admin'}</div>
+                    <div className="text-[10px] text-slate-500 font-semibold truncate">
+                      {user.isSandbox ? 'Sandbox Mode' : (user.email || 'hr@ultatel.com')}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center shrink-0">
+                  {user.isSandbox ? (
+                    <span className="flex h-2 w-2 relative" title="Sandbox Offline Active">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
                   ) : (
-                    <User className="w-4 h-4 text-brand-blue" />
+                    <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Logout to Sandbox">
+                      <LogOut className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
-                <div className="overflow-hidden">
-                   <div className="text-xs font-bold text-slate-900 truncate">{user.displayName || 'HR Admin'}</div>
-                   <div className="text-[10px] text-slate-500 truncate">{user.email || 'hr@ultatel.com'}</div>
-                </div>
               </div>
-              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Logout">
-                <LogOut className="w-4 h-4" />
-              </button>
+
+              {user.isSandbox ? (
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="w-full py-1.5 px-3 bg-brand-blue text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-brand-blue-light transition-all text-center shrink-0 flex items-center justify-center gap-1.5 animate-pulse"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  Connect Firebase Cloud
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 justify-center py-1 bg-emerald-50 text-emerald-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  Cloud Sync Active
+                </div>
+              )}
             </>
           ) : (
             <button onClick={() => setShowLoginModal(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white text-sm font-bold rounded-lg shadow-sm hover:bg-brand-blue-light transition-all">
@@ -618,7 +677,7 @@ export default function App() {
            
            <div className="flex items-center gap-1">
               {!user ? (
-                <button onClick={() => setShowLoginModal(true)} className="text-xs font-bold text-brand-blue bg-brand-light px-3 py-1.5 rounded mr-2 uppercase tracking-wide">Login</button>
+                <button onClick={() => setShowLoginModal(true)} className="text-[10px] font-black text-brand-blue bg-brand-light px-2.5 py-1.5 rounded mr-2 uppercase tracking-wide">Connect Cloud</button>
               ) : (
                 <button onClick={handleLogout} className="text-xs font-bold text-slate-500 hover:text-red-500 uppercase tracking-wide mr-2"><LogOut className="w-4 h-4"/></button>
               )}
