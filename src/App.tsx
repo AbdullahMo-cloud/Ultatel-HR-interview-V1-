@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { sections } from './data';
 import { SectionDef, RatingOption, EvaluationRecord } from './types';
-import { CheckCircle2, AlertTriangle, ShieldX, Check, Database, Plus, PieChart, ClipboardList, MessageSquare, Activity, User, LogOut, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, ShieldX, Check, Database, Plus, PieChart, ClipboardList, MessageSquare, Activity, User, LogOut, RefreshCw, Brain, ShieldCheck, Target } from 'lucide-react';
 import DatabaseView from './DatabaseView';
 import RecordDetailView from './RecordDetailView';
 import AnalyticsView from './AnalyticsView';
@@ -903,7 +903,7 @@ export default function App() {
             )}
 
             {currentView === 'form' && (
-              <div className="flex flex-col xl:flex-row gap-8 relative items-start">
+              <div className="flex flex-col lg:flex-row gap-8 relative items-start">
                 
                 {/* Main Form Area */}
                 <div className="flex-1 space-y-8 min-w-0 w-full">
@@ -998,18 +998,33 @@ export default function App() {
                     </div>
                   </header>
 
-                  {sections.map((section: SectionDef) => (
+                  {sections.map((section: SectionDef, secIdx) => {
+                    const SECTION_THEMES = [
+                      { text: 'text-blue-800', bg: 'bg-blue-100', border: 'border-blue-200' },
+                      { text: 'text-purple-800', bg: 'bg-purple-100', border: 'border-purple-200' },
+                      { text: 'text-amber-800', bg: 'bg-amber-100', border: 'border-amber-200' },
+                      { text: 'text-emerald-800', bg: 'bg-emerald-100', border: 'border-emerald-200' },
+                      { text: 'text-rose-800', bg: 'bg-rose-100', border: 'border-rose-200' },
+                      { text: 'text-cyan-800', bg: 'bg-cyan-100', border: 'border-cyan-200' },
+                      { text: 'text-fuchsia-800', bg: 'bg-fuchsia-100', border: 'border-fuchsia-200' },
+                      { text: 'text-teal-800', bg: 'bg-teal-100', border: 'border-teal-200' },
+                      { text: 'text-indigo-800', bg: 'bg-indigo-100', border: 'border-indigo-200' },
+                      { text: 'text-orange-800', bg: 'bg-orange-100', border: 'border-orange-200' }
+                    ];
+                    const theme = SECTION_THEMES[secIdx % SECTION_THEMES.length];
+
+                    return (
                     <div key={section.id} className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200">
-                      <div className="border-b border-slate-100 pb-4 mb-6 relative">
+                      <div className={`pb-4 mb-6 relative px-4 py-3 rounded-lg border ${theme.bg} ${theme.border}`}>
                         {section.weight && (
-                          <div className="absolute right-0 top-0 mt-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-black uppercase tracking-wider">
+                          <div className={`absolute right-4 top-4 px-3 py-1.5 bg-white/50 rounded-lg text-xs font-black uppercase tracking-wider ${theme.text}`}>
                             {section.weight} Pts Total
                           </div>
                         )}
-                        <h2 className="text-xl font-black text-slate-900 pr-24">{section.title}</h2>
+                        <h2 className={`text-xl font-black pr-24 ${theme.text}`}>{section.title}</h2>
                         {section.description && (
-                          <div className="mt-4 bg-brand-light/50 border-l-4 border-brand-blue p-4 rounded-r-lg">
-                            <p className="text-sm text-brand-blue font-semibold leading-relaxed whitespace-pre-wrap">{section.description}</p>
+                          <div className={`mt-4 border-l-4 p-4 rounded-r-lg bg-white/40 ${theme.border}`}>
+                            <p className={`text-sm font-semibold leading-relaxed whitespace-pre-wrap ${theme.text}`}>{section.description}</p>
                           </div>
                         )}
                       </div>
@@ -1210,17 +1225,18 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
 
                   {/* Action Footer Removed to avoid duplication with sidebar */}
                 </div>
 
                 {/* Sticky Scoreboard Sidebar */}
-                <div className="w-full xl:w-80 xl:sticky xl:top-8 flex-shrink-0">
+                <div className="w-full lg:w-[320px] 2xl:w-[360px] lg:sticky lg:top-8 flex-shrink-0">
                   <div className="bg-white p-6 flex flex-col min-h-[600px] rounded-xl shadow-sm border border-slate-200">
                     <div className="text-center mb-8 pb-8 border-b border-slate-100">
                       <div className="relative inline-block mt-4">
-                        <svg className="w-32 h-32 transform -rotate-90">
+                        <svg className="w-48 h-48 transform -rotate-90" viewBox="0 0 128 128">
                           <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-slate-100" />
                           <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="12" strokeLinecap="round" fill="transparent" strokeDasharray="364.4" strokeDashoffset={364.4 - (364.4 * (scoreInfo.total / 100))} className="text-brand-yellow transition-all duration-700" />
                         </svg>
@@ -1245,7 +1261,7 @@ export default function App() {
                       <div className="space-y-4">
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-600">Mindset (22/30)</span>
+                            <span className="text-slate-600 flex items-center gap-1.5"><Brain className="w-3.5 h-3.5 text-blue-500" /> Mindset (22/30)</span>
                             <span className={scoreInfo.sec3 >= 22 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec3}/30</span>
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1254,7 +1270,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-600">Honesty (15/20)</span>
+                            <span className="text-slate-600 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-purple-500" /> Honesty (15/20)</span>
                             <span className={scoreInfo.sec4 >= 15 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec4}/20</span>
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1263,7 +1279,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-600">Discipline & Commitment (11/15)</span>
+                            <span className="text-slate-600 flex items-center gap-1.5"><ClipboardList className="w-3.5 h-3.5 text-amber-500" /> Discipline & Commitment (11/15)</span>
                             <span className={(scoreInfo.sec5 ?? 0) >= 11 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec5 ?? 0}/15</span>
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1272,7 +1288,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-600">Coachability (11/15)</span>
+                            <span className="text-slate-600 flex items-center gap-1.5"><Target className="w-3.5 h-3.5 text-green-500" /> Coachability (11/15)</span>
                             <span className={scoreInfo.sec6 >= 11 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec6}/15</span>
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1281,7 +1297,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-600">Comm/Roleplay (10/15)</span>
+                            <span className="text-slate-600 flex items-center gap-1.5"><MessageSquare className="w-3.5 h-3.5 text-rose-500" /> Comm/Roleplay (10/15)</span>
                             <span className={scoreInfo.sec7 >= 10 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec7}/15</span>
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1290,7 +1306,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-600">Retention Risk (4/5)</span>
+                            <span className="text-slate-600 flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-teal-500" /> Retention Risk (4/5)</span>
                             <span className={(scoreInfo.sec8 ?? 0) >= 4 ? 'text-green-600' : 'text-amber-500'}>{scoreInfo.sec8 ?? 0}/5</span>
                           </div>
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">

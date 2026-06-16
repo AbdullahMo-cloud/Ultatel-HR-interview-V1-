@@ -52,8 +52,8 @@ export const sections: SectionDef[] = [
       {
         id: "q6",
         text: "Ask if they are familiar with the service we will be offering. If not explain it a little",
-        type: "text",
-        optional: true
+        type: "choice",
+        options: ["Yes", "No", "Other"]
       },
       {
         id: "q7",
@@ -116,7 +116,6 @@ export const sections: SectionDef[] = [
         id: "q11",
         text: "What do you think separates someone who succeeds in this role from someone who quits?",
         type: "rating",
-        optional: true,
         options: [
           { points: 5, label: "Strong answer", text: "The person who succeeds probably stays consistent, does not take rejection personally, listens to coaching, and keeps improving even when it is hard." },
           { points: 3, label: "Average answer", text: "Someone who works hard and keeps trying." },
@@ -363,54 +362,62 @@ export const sections: SectionDef[] = [
   },
   {
     id: "sec11",
-    title: "Section 11: Interviewer Final Evaluation",
+    title: "Section 10: Interviewer Final Evaluation",
     description: "After the interview, answer these questions.",
     questions: [
       {
         id: "q30",
         text: "Does this person understand what cold calling really is?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       },
       {
         id: "q31",
         text: "Do they take ownership before blaming leads, scripts, or managers?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       },
       {
         id: "q32",
         text: "Do they seem honest when performance is weak?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       },
       {
         id: "q33",
         text: "Would they protect appointment quality?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       },
       {
         id: "q34",
         text: "Do they accept correction without ego?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       },
       {
         id: "q35",
         text: "Can they stay consistent through repetitive work?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       },
       {
         id: "q36",
         text: "Would I trust them to speak with a business owner or office manager?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       },
       {
         id: "q37",
         text: "Do I believe they will still be here after training gets difficult?",
-        type: "yes_no"
+        type: "yes_no",
+        optional: true
       }
     ]
   },
   {
     id: "sec13",
-    title: "Section 13: Final Rating",
+    title: "Section 11: Final Rating",
     questions: [
       {
         id: "q38",
