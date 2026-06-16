@@ -52,7 +52,8 @@ export const sections: SectionDef[] = [
       {
         id: "q6",
         text: "Ask if they are familiar with the service we will be offering. If not explain it a little",
-        type: "text"
+        type: "text",
+        optional: true
       },
       {
         id: "q7",
@@ -115,6 +116,7 @@ export const sections: SectionDef[] = [
         id: "q11",
         text: "What do you think separates someone who succeeds in this role from someone who quits?",
         type: "rating",
+        optional: true,
         options: [
           { points: 5, label: "Strong answer", text: "The person who succeeds probably stays consistent, does not take rejection personally, listens to coaching, and keeps improving even when it is hard." },
           { points: 3, label: "Average answer", text: "Someone who works hard and keeps trying." },

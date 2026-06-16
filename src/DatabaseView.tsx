@@ -153,8 +153,6 @@ export default function DatabaseView({
           record.interviewerName || "",
           record.candidateName || "",
           record.candidateSite || "",
-          record.candidateEmail || "",
-          record.candidatePhone || "",
           record.scoreInfo?.total || 0,
           record.scoreInfo?.rec || "",
           record.scoreInfo?.sec3 || 0,
@@ -195,14 +193,12 @@ export default function DatabaseView({
   };
 
   const handleExport = () => {
-    const headers = ['Date', 'Interviewer', 'Candidate Name', 'Site', 'Email', 'Phone', 'Total Score', 'Mindset Score', 'Honesty Score', 'Discipline Score', 'Coachability Score', 'Comm Score', 'Retention Score', 'Recommendation', 'Red Flags'];
+    const headers = ['Date', 'Interviewer', 'Candidate Name', 'Site', 'Total Score', 'Mindset Score', 'Honesty Score', 'Discipline Score', 'Coachability Score', 'Comm Score', 'Retention Score', 'Recommendation', 'Red Flags'];
     const rows = data.map(r => [
         `"${new Date(r.date).toLocaleDateString()}"`,
         `"${r.interviewerName || ''}"`,
         `"${r.candidateName || ''}"`,
         `"${r.candidateSite || ''}"`,
-        `"${r.candidateEmail || ''}"`,
-        `"${r.candidatePhone || ''}"`,
         r.scoreInfo?.total || 0,
         r.scoreInfo?.sec3 || 0,
         r.scoreInfo?.sec4 || 0,
@@ -509,7 +505,6 @@ export default function DatabaseView({
                 </td>
                 <td className="p-4">
                   <div className="font-bold text-slate-900">{record.candidateName || 'Unnamed'}</div>
-                  <div className="text-xs text-slate-500">{record.candidateEmail || 'No email'}</div>
                 </td>
                 <td className="p-4">
                   <span className="inline-flex items-center px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-semibold">

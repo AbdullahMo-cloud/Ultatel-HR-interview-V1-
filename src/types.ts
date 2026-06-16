@@ -12,6 +12,7 @@ export interface Question {
   type: QuestionType;
   options?: string[] | RatingOption[];
   clarification?: string;
+  optional?: boolean;
 }
 
 export interface SectionDef {
@@ -29,8 +30,6 @@ export interface EvaluationRecord {
   date: string;
   interviewerName: string;
   candidateName: string;
-  candidateEmail: string;
-  candidatePhone: string;
   candidateSite?: string;
   answers: Record<string, any>;
   scoreInfo: any;

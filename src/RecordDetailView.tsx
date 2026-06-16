@@ -8,9 +8,10 @@ interface Props {
   record: EvaluationRecord;
   onBack: () => void;
   onEdit: (id: string) => void;
+  userEmail?: string;
 }
 
-export default function RecordDetailView({ record, onBack, onEdit }: Props) {
+export default function RecordDetailView({ record, onBack, onEdit, userEmail }: Props) {
   const { scoreInfo } = record;
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -49,7 +50,9 @@ export default function RecordDetailView({ record, onBack, onEdit }: Props) {
         alert('Report image copied to clipboard!\n\nAn email draft will now open. Please paste (Ctrl+V) the image into the email body.');
         
         const subject = encodeURIComponent(`Candidate Evaluation: ${record.candidateName || 'Unnamed'}`);
-        window.location.href = `mailto:?subject=${subject}`;
+        const to = userEmail ? encodeURIComponent(userEmail) : '';
+        const cc = encodeURIComponent('tarek.moaz@ultatel.com;Mohamed.AbouElHassan@ultatel.com;sam.casey@ultatel.com;sophia.brooks@ultatel.com;Mariem.Embaby@ultatel.com;nadine.miller@ultatel.com;mohamed.aboelqassem@ultatel.com;mennatullah.bahaa@ultatel.com;esra.alidrisi@ultatel.com;florence.mark@ultatel.com');
+        window.location.href = `mailto:${to}?cc=${cc}&subject=${subject}`;
       } catch (clipboardErr) {
          console.error('Clipboard error:', clipboardErr);
          alert('Could not copy image automatically to clipboard (browser restriction). You may need to take a screenshot instead.');
@@ -81,8 +84,6 @@ export default function RecordDetailView({ record, onBack, onEdit }: Props) {
           <div>
             <h2 className="text-2xl font-bold text-slate-900">{record.candidateName || 'Unnamed Candidate'}</h2>
             <div className="text-sm text-slate-500 mt-2 flex items-center gap-4">
-               <span>Email: <span className="text-slate-900 font-medium">{record.candidateEmail || 'N/A'}</span></span>
-               <span>Phone: <span className="text-slate-900 font-medium">{record.candidatePhone || 'N/A'}</span></span>
                <span>Site: <span className="text-slate-900 font-medium">{record.candidateSite || '—'}</span></span>
             </div>
             <div className="text-sm text-slate-500 mt-1 flex items-center gap-4">
@@ -114,32 +115,44 @@ export default function RecordDetailView({ record, onBack, onEdit }: Props) {
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
               <Brain className="absolute -right-4 -bottom-4 w-16 h-16 text-blue-200/50 group-hover:scale-110 group-hover:text-blue-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Brain className="w-4 h-4 text-blue-500" /> Mindset</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec3 || 0} / 30</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
+                {scoreInfo?.sec3 || 0} / 30 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec3 || 0) / 30) * 100)}%)</span>
+              </div>
             </div>
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
               <ShieldCheck className="absolute -right-4 -bottom-4 w-16 h-16 text-purple-200/50 group-hover:scale-110 group-hover:text-purple-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-purple-500" /> Honesty & Character</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec4 || 0} / 20</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
+                {scoreInfo?.sec4 || 0} / 20 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec4 || 0) / 20) * 100)}%)</span>
+              </div>
             </div>
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
               <ClipboardList className="absolute -right-4 -bottom-4 w-16 h-16 text-amber-200/50 group-hover:scale-110 group-hover:text-amber-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><ClipboardList className="w-4 h-4 text-amber-500" /> Discipline</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec5 || 0} / 15</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
+                {scoreInfo?.sec5 || 0} / 15 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec5 || 0) / 15) * 100)}%)</span>
+              </div>
             </div>
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
               <Target className="absolute -right-4 -bottom-4 w-16 h-16 text-green-200/50 group-hover:scale-110 group-hover:text-green-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Target className="w-4 h-4 text-green-500" /> Coachability</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec6 || 0} / 15</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
+                {scoreInfo?.sec6 || 0} / 15 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec6 || 0) / 15) * 100)}%)</span>
+              </div>
             </div>
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
                <MessageSquare className="absolute -right-4 -bottom-4 w-16 h-16 text-rose-200/50 group-hover:scale-110 group-hover:text-rose-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><MessageSquare className="w-4 h-4 text-rose-500" /> Comm / Roleplay</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec7 || 0} / 15</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
+                {scoreInfo?.sec7 || 0} / 15 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec7 || 0) / 15) * 100)}%)</span>
+              </div>
             </div>
             <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
               <Activity className="absolute -right-4 -bottom-4 w-16 h-16 text-teal-200/50 group-hover:scale-110 group-hover:text-teal-200 transition-all duration-300" />
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Activity className="w-4 h-4 text-teal-500" /> Retention Risk</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">{scoreInfo?.sec8 || 0} / 5</div>
+              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
+                {scoreInfo?.sec8 || 0} / 5 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec8 || 0) / 5) * 100)}%)</span>
+              </div>
             </div>
         </div>
 
@@ -176,7 +189,7 @@ export default function RecordDetailView({ record, onBack, onEdit }: Props) {
         <div>
            <h3 className="text-lg font-bold text-slate-900 mb-4 border-b border-slate-100 pb-2">Full Responses</h3>
            <div className="space-y-8">
-             {sections.map(sec => {
+             {sections.map((sec, secIdx) => {
                // Only show sections with questions
                if (!sec.questions || sec.questions.length === 0) return null;
                
@@ -184,9 +197,25 @@ export default function RecordDetailView({ record, onBack, onEdit }: Props) {
                const hasAnswers = sec.questions.some(q => record.answers[q.id] !== undefined && record.answers[q.id] !== '');
                if (!hasAnswers) return null;
 
+               const SECTION_THEMES = [
+                 { text: 'text-blue-800', bg: 'bg-blue-100', border: 'border-blue-200', icon: 'text-blue-600' },
+                 { text: 'text-purple-800', bg: 'bg-purple-100', border: 'border-purple-200', icon: 'text-purple-600' },
+                 { text: 'text-amber-800', bg: 'bg-amber-100', border: 'border-amber-200', icon: 'text-amber-600' },
+                 { text: 'text-emerald-800', bg: 'bg-emerald-100', border: 'border-emerald-200', icon: 'text-emerald-600' },
+                 { text: 'text-rose-800', bg: 'bg-rose-100', border: 'border-rose-200', icon: 'text-rose-600' },
+                 { text: 'text-cyan-800', bg: 'bg-cyan-100', border: 'border-cyan-200', icon: 'text-cyan-600' },
+                 { text: 'text-fuchsia-800', bg: 'bg-fuchsia-100', border: 'border-fuchsia-200', icon: 'text-fuchsia-600' },
+                 { text: 'text-teal-800', bg: 'bg-teal-100', border: 'border-teal-200', icon: 'text-teal-600' },
+                 { text: 'text-indigo-800', bg: 'bg-indigo-100', border: 'border-indigo-200', icon: 'text-indigo-600' },
+                 { text: 'text-orange-800', bg: 'bg-orange-100', border: 'border-orange-200', icon: 'text-orange-600' }
+               ];
+               const theme = SECTION_THEMES[secIdx % SECTION_THEMES.length];
+
                return (
                  <div key={sec.id} className="space-y-4">
-                   <h4 className="text-sm font-bold tracking-widest text-slate-500 uppercase flex items-center gap-2"><ClipboardList className="w-4 h-4 text-slate-400" /> {sec.title}</h4>
+                   <h4 className={`text-sm font-black tracking-widest uppercase flex items-center gap-2 px-3 py-2 rounded-md ${theme.bg} ${theme.text} border ${theme.border}`}>
+                     <ClipboardList className={`w-4 h-4 ${theme.icon}`} /> {sec.title}
+                   </h4>
                    <div className="bg-slate-50 rounded p-4 border border-slate-100 space-y-4">
                      {sec.questions.map(q => {
                        const rawAns = record.answers[q.id];
@@ -200,10 +229,15 @@ export default function RecordDetailView({ record, onBack, onEdit }: Props) {
                            if (opt) displayAns = `${opt.points} pts - ${opt.label}: "${opt.text}"`;
                        }
 
+                       const commentAns = record.answers[`${q.id}_comment`] || record.answers[`${q.id}_other`];
+                       if (commentAns) {
+                           displayAns = `${displayAns} (Comment: ${commentAns})`;
+                       }
+
                        return (
                          <div key={q.id}>
                            <div className="text-xs text-slate-500 font-bold mb-1">{q.text}</div>
-                           <div className="text-sm text-slate-900 font-medium bg-white p-3 rounded border border-slate-200">
+                           <div className="text-sm text-slate-900 font-medium bg-white p-3 rounded border border-slate-200 shrink-0 break-words whitespace-pre-wrap">
                              {displayAns}
                            </div>
                          </div>
