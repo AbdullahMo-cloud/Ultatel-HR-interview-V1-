@@ -1,10 +1,11 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { sections } from './data';
+import { sections as defaultSections } from './data';
 import { SectionDef, RatingOption, EvaluationRecord } from './types';
-import { CheckCircle2, AlertTriangle, ShieldX, Check, Database, Plus, PieChart, ClipboardList, MessageSquare, Activity, User, LogOut, RefreshCw, Brain, ShieldCheck, Target } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, ShieldX, Check, Database, Plus, PieChart, ClipboardList, MessageSquare, Activity, User, LogOut, RefreshCw, Brain, ShieldCheck, Target, Settings } from 'lucide-react';
 import DatabaseView from './DatabaseView';
 import RecordDetailView from './RecordDetailView';
 import AnalyticsView from './AnalyticsView';
+import AdminPanelView from './AdminPanelView';
 import { appendRecordToSpreadsheet } from './sheetsService';
 import { auth, db } from './firebase';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -21,7 +22,21 @@ import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'fi
 import { KeyRound, ShieldAlert, Sparkles, X } from 'lucide-react';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'form' | 'db' | 'detail' | 'analytics'>('form');
+  const [appSections, setAppSections] = useState<SectionDef[]>(() => {
+    const saved = localStorage.getItem('ultatel_sections');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return defaultSections;
+  });
+
+  const handleSaveSections = (newSections: SectionDef[]) => {
+    setAppSections(newSections);
+    localStorage.setItem('ultatel_sections', JSON.stringify(newSections));
+    setCurrentView('form');
+  };
+
+  const [currentView, setCurrentView] = useState<'form' | 'db' | 'detail' | 'analytics' | 'admin'>('form');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   
   const [interviewerName, setInterviewerName] = useState('');
@@ -529,7 +544,7 @@ export default function App() {
       return showAlert("Missing Information", "Site is required.", "alert");
     }
 
-    for (const section of sections) {
+    for (const section of appSections) {
       if (section.isInformational) continue;
       for (const q of section.questions) {
         if (q.optional) continue;
@@ -678,30 +693,37 @@ export default function App() {
     return filteredDatabase.find(r => r.id === selectedRecordId);
   }, [selectedRecordId, filteredDatabase]);
 
+  const questionNumbers = useMemo(() => {
+    let counter = 1;
+    const numMap: Record<string, number> = {};
+    appSections.forEach(sec => {
+      sec.questions.forEach(q => {
+        numMap[q.id] = counter++;
+      });
+    });
+    return numMap;
+  }, [appSections]);
+
   // Calculate scores
   const scoreInfo = useMemo(() => {
     let total = 0;
-    let sec3 = 0; // Mindset (30)
-    let sec4 = 0; // Honesty (20)
-    let sec5 = 0; // Discipline & Commitment (15)
-    let sec6 = 0; // Coachability (15)
-    let sec7 = 0; // Communication (15)
-    let sec8 = 0; // Retention Risk (5)
+    const scoresBySection: Record<string, number> = {};
+    
+    appSections.forEach(sec => {
+      scoresBySection[sec.id] = 0;
+    });
 
     const addScore = (qId: string, sectionId: string) => {
       const val = answers[qId] as number;
       if (val) {
         total += val;
-        if (sectionId === 'sec3') sec3 += val;
-        if (sectionId === 'sec4') sec4 += val;
-        if (sectionId === 'sec5') sec5 += val;
-        if (sectionId === 'sec6') sec6 += val;
-        if (sectionId === 'sec7') sec7 += val;
-        if (sectionId === 'sec8') sec8 += val;
+        if (scoresBySection[sectionId] !== undefined) {
+          scoresBySection[sectionId] += val;
+        }
       }
     };
 
-    sections.forEach(sec => {
+    appSections.forEach(sec => {
       sec.questions.forEach(q => {
         if (q.type === 'rating') {
           addScore(q.id, sec.id);
@@ -717,12 +739,13 @@ export default function App() {
     else if (total >= 60) { rec = "High risk"; color = "text-orange-600 bg-orange-50 rounded-xl px-2 py-1"; }
     else { rec = "Do not hire"; color = "text-red-600 bg-red-50 rounded-xl px-2 py-1"; }
 
-    const isMindsetFail = sec3 && sec3 < 22; // Must be 22/30+
-    const isHonestyFail = sec4 && sec4 < 15; // Must be 15/20+
-    const isDisciplineFail = sec5 && sec5 < 11; // Must be 11/15+
-    const isRetentionFail = sec8 && sec8 < 4; // Must be 4/5+
+    // Preserve legacy behavior if the original sections exist
+    const isMindsetFail = scoresBySection['sec3'] !== undefined && scoresBySection['sec3'] < 22;
+    const isHonestyFail = scoresBySection['sec4'] !== undefined && scoresBySection['sec4'] < 15;
+    const isDisciplineFail = scoresBySection['sec5'] !== undefined && scoresBySection['sec5'] < 11;
+    const isRetentionFail = scoresBySection['sec8'] !== undefined && scoresBySection['sec8'] < 4;
     
-    // Automatic Red flags checking
+    // Automatic Red flags checking (if these questions still exist)
     const q32Val = answers['q32']; // Do they seem honest when performance is weak?
     const q34Val = answers['q34']; // Do they accept correction without ego?
     const q37Val = answers['q37']; // Do I believe they will still be here?
@@ -732,8 +755,16 @@ export default function App() {
     if (q34Val === 'No') autoFails.push("Candidate does not accept correction without ego.");
     if (q37Val === 'No') autoFails.push("Do not believe candidate will stay after training gets difficult.");
 
-    return { total, sec3, sec4, sec5, sec6, sec7, sec8, rec, color, isMindsetFail, isHonestyFail, isDisciplineFail, isRetentionFail, autoFails };
-  }, [answers]);
+    // Provide the dynamic scores 
+    const sec3 = scoresBySection['sec3'] || 0;
+    const sec4 = scoresBySection['sec4'] || 0;
+    const sec5 = scoresBySection['sec5'] || 0;
+    const sec6 = scoresBySection['sec6'] || 0;
+    const sec7 = scoresBySection['sec7'] || 0;
+    const sec8 = scoresBySection['sec8'] || 0;
+
+    return { total, scoresBySection, sec3, sec4, sec5, sec6, sec7, sec8, rec, color, isMindsetFail, isHonestyFail, isDisciplineFail, isRetentionFail, autoFails };
+  }, [answers, appSections]);
 
   return (
     <div className="flex h-screen bg-brand-light text-slate-900 font-sans overflow-hidden">
@@ -786,6 +817,18 @@ export default function App() {
              >
                <PieChart className="w-5 h-5 shrink-0" />
                Analytics & Insights
+             </button>
+
+             <button 
+               onClick={() => setCurrentView('admin')} 
+               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
+                 currentView === 'admin' 
+                   ? 'bg-brand-blue text-white shadow-md shadow-brand-blue/20' 
+                   : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+               }`}
+             >
+               <Settings className="w-5 h-5 shrink-0" />
+               Form Templates
              </button>
            </nav>
         </div>
@@ -871,6 +914,7 @@ export default function App() {
               <button onClick={() => setCurrentView('form')} className={`p-2 rounded ${currentView === 'form' ? 'text-brand-blue bg-brand-light' : 'text-slate-500'}`}><ClipboardList className="w-5 h-5"/></button>
               <button onClick={() => setCurrentView('db')} className={`p-2 rounded ${currentView === 'db' || currentView === 'detail' ? 'text-brand-blue bg-brand-light' : 'text-slate-500'}`}><Database className="w-5 h-5"/></button>
               <button onClick={() => setCurrentView('analytics')} className={`p-2 rounded ${currentView === 'analytics' ? 'text-brand-blue bg-brand-light' : 'text-slate-500'}`}><PieChart className="w-5 h-5"/></button>
+              <button onClick={() => setCurrentView('admin')} className={`p-2 rounded ${currentView === 'admin' ? 'text-brand-blue bg-brand-light' : 'text-slate-500'}`}><Settings className="w-5 h-5"/></button>
            </div>
         </header>
 
@@ -899,6 +943,16 @@ export default function App() {
                 onBack={() => setCurrentView('db')} 
                 onEdit={handleEditRecord}
                 userEmail={user?.email}
+                sections={appSections}
+              />
+            )}
+
+            {currentView === 'admin' && (
+              <AdminPanelView 
+                sections={appSections} 
+                onSave={handleSaveSections} 
+                showConfirm={showConfirm}
+                showAlert={showAlert}
               />
             )}
 
@@ -998,7 +1052,7 @@ export default function App() {
                     </div>
                   </header>
 
-                  {sections.map((section: SectionDef, secIdx) => {
+                  {appSections.map((section: SectionDef, secIdx) => {
                     const SECTION_THEMES = [
                       { text: 'text-blue-800', bg: 'bg-blue-100', border: 'border-blue-200' },
                       { text: 'text-purple-800', bg: 'bg-purple-100', border: 'border-purple-200' },
@@ -1016,9 +1070,14 @@ export default function App() {
                     return (
                     <div key={section.id} className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200">
                       <div className={`pb-4 mb-6 relative px-4 py-3 rounded-lg border ${theme.bg} ${theme.border}`}>
-                        {section.weight && (
+                        {section.questions.some(q => q.type === 'rating') && (
                           <div className={`absolute right-4 top-4 px-3 py-1.5 bg-white/50 rounded-lg text-xs font-black uppercase tracking-wider ${theme.text}`}>
-                            {section.weight} Pts Total
+                            {section.questions.reduce((sum, q) => {
+                              if (q.type === 'rating' && Array.isArray(q.options)) {
+                                return sum + Math.max(...(q.options as RatingOption[]).map(o => o.points || 0), 0);
+                              }
+                              return sum;
+                            }, 0)} Pts Total
                           </div>
                         )}
                         <h2 className={`text-xl font-black pr-24 ${theme.text}`}>{section.title}</h2>
@@ -1050,7 +1109,7 @@ export default function App() {
                           <div key={q.id} className="space-y-4 group">
                             <div className="flex justify-between items-start gap-4">
                               <h3 className="font-bold text-slate-900 text-[15px] flex gap-3 leading-snug">
-                                <span className="text-brand-blue-light">{q.id.replace('q', '')}.</span>
+                                <span className="text-brand-blue-light">{questionNumbers[q.id]}.</span>
                                 <span>{q.text}</span>
                               </h3>
                               <div className="flex items-center gap-2 shrink-0 mt-1">
@@ -1141,81 +1200,77 @@ export default function App() {
 
                               {q.type === 'rating' && (
                                 <div className="space-y-4">
-                                  {/* 1 to 5 rating buttons bar */}
+                                  {/* Point rating buttons bar */}
                                   <div className="flex flex-wrap items-center gap-3">
-                                    {[1, 2, 3, 4, 5].map((pts) => {
-                                      const isSelected = answers[q.id] === pts;
-                                      let btnStyles = "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300";
-                                      if (isSelected) {
-                                        if (pts >= 4) {
-                                          btnStyles = "bg-green-600 border-green-600 text-white shadow-md ring-2 ring-green-600/20 font-black scale-105";
-                                        } else if (pts === 3) {
-                                          btnStyles = "bg-amber-500 border-amber-500 text-white shadow-md ring-2 ring-amber-500/20 font-black scale-105";
-                                        } else {
-                                          btnStyles = "bg-red-500 border-red-500 text-white shadow-md ring-2 ring-red-500/20 font-black scale-105";
+                                    {(() => {
+                                      const maxPts = Math.max(...(q.options as RatingOption[]).map(o => o.points || 0), 5);
+                                      const pointRange = Array.from({length: maxPts}, (_, i) => i + 1);
+                                      return pointRange.map((pts) => {
+                                        const isSelected = answers[q.id] === pts;
+                                        let btnStyles = "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300";
+                                        if (isSelected) {
+                                          if (pts >= maxPts * 0.8) {
+                                            btnStyles = "bg-green-600 border-green-600 text-white shadow-md ring-2 ring-green-600/20 font-black scale-105";
+                                          } else if (pts >= maxPts * 0.5) {
+                                            btnStyles = "bg-amber-500 border-amber-500 text-white shadow-md ring-2 ring-amber-500/20 font-black scale-105";
+                                          } else {
+                                            btnStyles = "bg-red-500 border-red-500 text-white shadow-md ring-2 ring-red-500/20 font-black scale-105";
+                                          }
                                         }
-                                      }
-                                      return (
-                                        <button
-                                          key={pts}
-                                          type="button"
-                                          onClick={() => handleAnswer(q.id, pts)}
-                                          className={`w-12 h-12 rounded-xl border text-base font-bold transition-all flex items-center justify-center ${btnStyles}`}
-                                        >
-                                          {pts}
-                                        </button>
-                                      );
-                                    })}
+                                        return (
+                                          <button
+                                            key={pts}
+                                            type="button"
+                                            onClick={() => handleAnswer(q.id, pts)}
+                                            className={`w-12 h-12 rounded-xl border text-base font-bold transition-all flex items-center justify-center ${btnStyles}`}
+                                          >
+                                            {pts}
+                                          </button>
+                                        );
+                                      });
+                                    })()}
                                     {answers[q.id] && (
                                       <span className="text-xs font-bold text-slate-500 italic ml-2">
-                                        Selected: {answers[q.id]} / 5 points
+                                        Selected: {answers[q.id]} / {Math.max(...(q.options as RatingOption[]).map(o => o.points || 0), 5)} points
                                       </span>
                                     )}
                                   </div>
+
+                                  {/* Add Comment Field */}
+                                  {answers[q.id] !== undefined && answers[q.id] !== null && (
+                                    <div className="mt-2 animate-in fade-in slide-in-from-top-2 mb-4">
+                                      <textarea
+                                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 outline-none text-sm font-medium min-h-[80px]"
+                                        placeholder={`Add a comment or detail for your rating... (Optional)`}
+                                        value={answers[`${q.id}_comment`] || ''}
+                                        onChange={(e) => handleAnswer(`${q.id}_comment`, e.target.value)}
+                                      />
+                                    </div>
+                                  )}
 
                                   {/* Evaluation Guidelines Hints */}
                                   <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-100/80 space-y-3">
                                     <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Evaluation Guidelines (Acuity Hints)</div>
                                     <div className="space-y-2.5 text-xs">
-                                      {/* Stronger (5) */}
-                                      {(() => {
-                                        const strong = (q.options as RatingOption[])?.find(o => o.points === 5);
-                                        if (strong) {
+                                      {((q.options as RatingOption[]) || [])
+                                        .filter(o => o.text && o.text.trim().length > 0)
+                                        .sort((a, b) => b.points - a.points)
+                                        .map((opt, oIndex) => {
+                                          let colorClass = "bg-slate-100 text-slate-700 border-slate-300";
+                                          const maxPts = Math.max(...(q.options as RatingOption[]).map(o => o.points || 0), 5);
+                                          if (opt.points >= maxPts * 0.8) colorClass = "bg-green-50 text-green-700 border-green-200";
+                                          else if (opt.points >= maxPts * 0.5) colorClass = "bg-amber-50 text-amber-700 border-amber-200";
+                                          else colorClass = "bg-red-50 text-red-700 border-red-200";
+
                                           return (
-                                            <div className="flex items-start gap-2.5">
-                                              <span className="px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-[9px] font-black h-fit shrink-0 tracking-wider">Stronger (5)</span>
-                                              <span className="text-slate-600 leading-normal font-medium">{strong.text}</span>
+                                            <div key={oIndex} className="flex items-start gap-2.5">
+                                              <span className={`px-1.5 py-0.5 border rounded text-[9px] font-black h-fit shrink-0 tracking-wider ${colorClass}`}>
+                                                {opt.label || 'Hint'} ({opt.points})
+                                              </span>
+                                              <span className="text-slate-600 leading-normal font-medium">{opt.text}</span>
                                             </div>
                                           );
-                                        }
-                                        return null;
-                                      })()}
-                                      {/* Average (3) */}
-                                      {(() => {
-                                        const avg = (q.options as RatingOption[])?.find(o => o.points === 3);
-                                        if (avg) {
-                                          return (
-                                            <div className="flex items-start gap-2.5">
-                                              <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-black h-fit shrink-0 tracking-wider">Average (3)</span>
-                                              <span className="text-slate-600 leading-normal font-medium">{avg.text}</span>
-                                            </div>
-                                          );
-                                        }
-                                        return null;
-                                      })()}
-                                      {/* Weak (1) */}
-                                      {(() => {
-                                        const weak = (q.options as RatingOption[])?.find(o => o.points === 1);
-                                        if (weak) {
-                                          return (
-                                            <div className="flex items-start gap-2.5">
-                                              <span className="px-1.5 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-[9px] font-black h-fit shrink-0 tracking-wider">Weak (1)</span>
-                                              <span className="text-slate-600 leading-normal font-medium">{weak.text}</span>
-                                            </div>
-                                          );
-                                        }
-                                        return null;
-                                      })()}
+                                      })}
                                     </div>
                                   </div>
                                 </div>

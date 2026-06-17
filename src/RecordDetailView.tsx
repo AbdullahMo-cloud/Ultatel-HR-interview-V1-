@@ -1,17 +1,18 @@
 import React, { useRef } from 'react';
-import { EvaluationRecord } from './types';
+import { EvaluationRecord, SectionDef } from './types';
 import { ArrowLeft, CheckCircle2, AlertTriangle, ShieldX, Mail, Copy, Brain, ShieldCheck, Target, MessageSquare, ClipboardList, CheckCircle, XCircle, Info, Image as ImageIcon, Activity, Pencil } from 'lucide-react';
-import { sections } from './data';
 import * as htmlToImage from 'html-to-image';
+import jsPDF from 'jspdf';
 
 interface Props {
   record: EvaluationRecord;
   onBack: () => void;
   onEdit: (id: string) => void;
   userEmail?: string;
+  sections: SectionDef[];
 }
 
-export default function RecordDetailView({ record, onBack, onEdit, userEmail }: Props) {
+export default function RecordDetailView({ record, onBack, onEdit, userEmail, sections }: Props) {
   const { scoreInfo } = record;
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -32,34 +33,47 @@ export default function RecordDetailView({ record, onBack, onEdit, userEmail }: 
     if (!printRef.current) return;
     
     try {
-      const dataUrl = await htmlToImage.toPng(printRef.current, { 
+      const el = printRef.current;
+      const dataUrl = await htmlToImage.toJpeg(el, { 
         backgroundColor: '#ffffff',
-        pixelRatio: 1,
+        pixelRatio: 3,
+        quality: 0.95,
         style: {
-          width: '900px',
-          margin: '0'
+          width: '1200px',
+          margin: '0',
+          transform: 'scale(1)',
+          transformOrigin: 'top left'
         }
       });
       
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
+      const width = 1200;
+      const height = el.scrollHeight * (1200 / el.scrollWidth);
       
-      try {
-        const item = new ClipboardItem({ 'image/png': blob });
-        await navigator.clipboard.write([item]);
-        alert('Report image copied to clipboard!\n\nAn email draft will now open. Please paste (Ctrl+V) the image into the email body.');
-        
-        const subject = encodeURIComponent(`Candidate Evaluation: ${record.candidateName || 'Unnamed'}`);
-        const to = userEmail ? encodeURIComponent(userEmail) : '';
-        const cc = encodeURIComponent('tarek.moaz@ultatel.com;Mohamed.AbouElHassan@ultatel.com;sam.casey@ultatel.com;sophia.brooks@ultatel.com;Mariem.Embaby@ultatel.com;nadine.miller@ultatel.com;mohamed.aboelqassem@ultatel.com;mennatullah.bahaa@ultatel.com;esra.alidrisi@ultatel.com;florence.mark@ultatel.com');
-        window.location.href = `mailto:${to}?cc=${cc}&subject=${subject}`;
-      } catch (clipboardErr) {
-         console.error('Clipboard error:', clipboardErr);
-         alert('Could not copy image automatically to clipboard (browser restriction). You may need to take a screenshot instead.');
-      }
+      const pdf = new jsPDF({
+        orientation: height > width ? 'p' : 'l',
+        unit: 'px',
+        format: [width, height]
+      });
+      
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, width, height);
+      pdf.save(`Evaluation_${record.candidateName || 'Candidate'}.pdf`);
+      
+      alert('A PDF report has been downloaded!\n\nAn email draft will now open. Please attach the downloaded PDF to the email.');
+      
+      const subject = encodeURIComponent(`Candidate Evaluation: ${record.candidateName || 'Unnamed'}`);
+      const to = userEmail ? encodeURIComponent(userEmail) : '';
+      const cc = encodeURIComponent('tarek.moaz@ultatel.com;Mohamed.AbouElHassan@ultatel.com;sam.casey@ultatel.com;sophia.brooks@ultatel.com;Mariem.Embaby@ultatel.com;nadine.miller@ultatel.com;mohamed.aboelqassem@ultatel.com;mennatullah.bahaa@ultatel.com;esra.alidrisi@ultatel.com;florence.mark@ultatel.com');
+      const emailBody = `Hi Team,
+
+Please find attached the interview evaluation results for your reference.
+
+Feel free to review the attached assessment at your convenience. If you would like any additional details, clarification on the scoring, or the underlying interview data, please let me know.
+
+Thank you.`;
+      window.location.href = `mailto:${to}?cc=${cc}&subject=${subject}&body=${encodeURIComponent(emailBody)}`;
     } catch (err) {
-      console.error('Failed to generate image', err);
-      alert('Failed to generate image. Error: ' + err);
+      console.error('Failed to generate PDF', err);
+      alert('Failed to generate PDF. Error: ' + err);
     }
   };
 
@@ -74,7 +88,7 @@ export default function RecordDetailView({ record, onBack, onEdit, userEmail }: 
             <Pencil className="w-4.5 h-4.5 text-brand-blue" /> Edit Candidate Evaluation
           </button>
           <button onClick={handleCopyAndEmail} className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white text-xs font-bold rounded shadow hover:bg-brand-blue-light transition-all cursor-pointer">
-            <ImageIcon className="w-4 h-4" /> Copy Report as Image & Email
+            <Mail className="w-4 h-4" /> Download PDF & Email
           </button>
         </div>
       </div>
@@ -112,48 +126,27 @@ export default function RecordDetailView({ record, onBack, onEdit, userEmail }: 
         )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
-              <Brain className="absolute -right-4 -bottom-4 w-16 h-16 text-blue-200/50 group-hover:scale-110 group-hover:text-blue-200 transition-all duration-300" />
-              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Brain className="w-4 h-4 text-blue-500" /> Mindset</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
-                {scoreInfo?.sec3 || 0} / 30 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec3 || 0) / 30) * 100)}%)</span>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
-              <ShieldCheck className="absolute -right-4 -bottom-4 w-16 h-16 text-purple-200/50 group-hover:scale-110 group-hover:text-purple-200 transition-all duration-300" />
-              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-purple-500" /> Honesty & Character</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
-                {scoreInfo?.sec4 || 0} / 20 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec4 || 0) / 20) * 100)}%)</span>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
-              <ClipboardList className="absolute -right-4 -bottom-4 w-16 h-16 text-amber-200/50 group-hover:scale-110 group-hover:text-amber-200 transition-all duration-300" />
-              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><ClipboardList className="w-4 h-4 text-amber-500" /> Discipline</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
-                {scoreInfo?.sec5 || 0} / 15 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec5 || 0) / 15) * 100)}%)</span>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
-              <Target className="absolute -right-4 -bottom-4 w-16 h-16 text-green-200/50 group-hover:scale-110 group-hover:text-green-200 transition-all duration-300" />
-              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Target className="w-4 h-4 text-green-500" /> Coachability</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
-                {scoreInfo?.sec6 || 0} / 15 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec6 || 0) / 15) * 100)}%)</span>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
-               <MessageSquare className="absolute -right-4 -bottom-4 w-16 h-16 text-rose-200/50 group-hover:scale-110 group-hover:text-rose-200 transition-all duration-300" />
-              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><MessageSquare className="w-4 h-4 text-rose-500" /> Comm / Roleplay</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
-                {scoreInfo?.sec7 || 0} / 15 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec7 || 0) / 15) * 100)}%)</span>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
-              <Activity className="absolute -right-4 -bottom-4 w-16 h-16 text-teal-200/50 group-hover:scale-110 group-hover:text-teal-200 transition-all duration-300" />
-              <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Activity className="w-4 h-4 text-teal-500" /> Retention Risk</div>
-              <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
-                {scoreInfo?.sec8 || 0} / 5 <span className="text-sm text-slate-500 ml-1 font-semibold">({Math.round(((scoreInfo?.sec8 || 0) / 5) * 100)}%)</span>
-              </div>
-            </div>
+            {sections.filter(s => s.questions.some(q => q.type === 'rating')).map((section, idx) => {
+               let maxPoints = 0;
+               section.questions.forEach(q => {
+                  if (q.type === 'rating' && q.options && Array.isArray(q.options)) {
+                     const points = q.options.map((o: any) => o.points || 0);
+                     if (points.length > 0) maxPoints += Math.max(...points);
+                  }
+               });
+               const score = scoreInfo?.scoresBySection?.[section.id] || 0;
+               const percent = maxPoints > 0 ? Math.round((score / maxPoints) * 100) : 0;
+               
+               return (
+                  <div key={section.id} className="p-4 bg-slate-50 rounded border border-slate-100 relative overflow-hidden group">
+                    <Activity className="absolute -right-4 -bottom-4 w-16 h-16 text-slate-200/50 group-hover:scale-110 group-hover:text-slate-300 transition-all duration-300" />
+                    <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Activity className="w-4 h-4 text-brand-blue shrink-0" /> <span className="truncate">{section.title.split(':')[0]}</span></div>
+                    <div className="text-xl font-bold text-slate-900 mt-2 relative z-10">
+                      {score} / {maxPoints} <span className="text-sm text-slate-500 ml-1 font-semibold">({percent}%)</span>
+                    </div>
+                  </div>
+               );
+            })}
         </div>
 
         {(scoreInfo?.isMindsetFail || scoreInfo?.isDisciplineFail || scoreInfo?.isRetentionFail || (scoreInfo?.autoFails && scoreInfo.autoFails.length > 0)) && (
