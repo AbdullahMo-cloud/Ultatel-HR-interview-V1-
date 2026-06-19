@@ -8,9 +8,7 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Enable offline persistent cache for robust real-time synchronization
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
+  // Offline cache temporarily disabled for debugging sync issues
 });
 
 export const auth = getAuth(app);
