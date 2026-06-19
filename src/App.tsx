@@ -137,6 +137,13 @@ export default function App() {
       if (!active) return;
       
       if (currentUser) {
+        if (currentUser.isAnonymous) {
+          signOut(auth);
+          setUser(null);
+          setAuthChecking(false);
+          return;
+        }
+        
         const userEmail = currentUser.email || '';
         let formattedName = currentUser.displayName;
         if (!formattedName && userEmail) {
@@ -164,8 +171,14 @@ export default function App() {
     };
   }, []);
 
-  // Sync database with Firestore unconditionally on mount for direct real-time updates
+  // Sync database with Firestore only when user is authenticated
   useEffect(() => {
+    if (!user) {
+      setDatabase([]);
+      setFirebaseSyncError(null);
+      return;
+    }
+
     // Fetch all evaluations so they are shared across all users in real-time
     const q = query(collection(db, 'evaluations'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -194,7 +207,7 @@ export default function App() {
       setFirebaseSyncError(error.message || 'Unknown Firestore Sync Error');
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   // Helper for rendering Email Provider disable explanation
   const renderEmailProviderWarning = () => {
@@ -590,9 +603,17 @@ export default function App() {
                   Sync Error (Offline)
                 </button>
               ) : (
-                <div className="flex items-center gap-1.5 justify-center py-1.5 w-full bg-emerald-50 text-emerald-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 select-none border border-emerald-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Cloud Sync Active
+                <div className="flex items-center gap-1 w-full">
+                  <div className="flex-1 flex items-center gap-1.5 justify-center py-1.5 bg-emerald-50 text-emerald-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 select-none border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Cloud Sync Active
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center justify-center py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-200 transition-colors"
+                  >
+                    Out
+                  </button>
                 </div>
               )}
             </>
