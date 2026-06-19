@@ -165,6 +165,7 @@ export default function App() {
     return localStorage.getItem('ultatel_custom_firebase_config') || '';
   });
   const [customFirebaseError, setCustomFirebaseError] = useState('');
+  const [firebaseSyncError, setFirebaseSyncError] = useState<string | null>(null);
 
   // Initialize and check local storage user if present
   useEffect(() => {
@@ -221,6 +222,7 @@ export default function App() {
     // Fetch all evaluations so they are shared across all registered users
     const q = query(collection(db, 'evaluations'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      setFirebaseSyncError(null);
       const records: EvaluationRecord[] = [];
       snapshot.forEach(doc => {
         const docData = doc.data();
@@ -277,6 +279,7 @@ export default function App() {
       localStorage.setItem('ultatel_evaluations', JSON.stringify(mergedRecords));
     }, (error: any) => {
       console.warn('Firestore Error, using local backup database:', error);
+      setFirebaseSyncError(error.message || 'Unknown Firestore Sync Error');
       // Fallback to local storage evaluations for this user or overall cache
       const stored = localStorage.getItem(`ultatel_evaluations_${user.uid}`) || localStorage.getItem('ultatel_evaluations');
       if (stored) {
@@ -879,8 +882,16 @@ export default function App() {
                   <Database className="w-3.5 h-3.5" />
                   Connect Firebase Cloud
                 </button>
+              ) : firebaseSyncError ? (
+                <button
+                  onClick={() => alert(`Firestore Sync Error: ${firebaseSyncError}. You are offline and your data is saved locally only.`)} 
+                  className="flex items-center gap-1.5 justify-center py-1 bg-red-50 text-red-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 border border-red-200"
+                >
+                  <AlertTriangle className="w-3 h-3 text-red-500" />
+                  Sync Error (Offline)
+                </button>
               ) : (
-                <div className="flex items-center gap-1.5 justify-center py-1 bg-emerald-50 text-emerald-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0">
+                <div className="flex items-center gap-1.5 justify-center py-1 bg-emerald-50 text-emerald-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 select-none">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                   Cloud Sync Active
                 </div>
