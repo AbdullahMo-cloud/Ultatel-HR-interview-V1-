@@ -22,6 +22,7 @@ interface Props {
   }>>;
   googleToken: string | null;
   onAuthorizeSheets: () => Promise<string | null>;
+  firebaseSyncError: string | null;
 }
 
 export default function DatabaseView({ 
@@ -32,7 +33,8 @@ export default function DatabaseView({
   sheetsConfig,
   setSheetsConfig,
   googleToken,
-  onAuthorizeSheets
+  onAuthorizeSheets,
+  firebaseSyncError
 }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSite, setSelectedSite] = useState('All');
@@ -437,6 +439,31 @@ export default function DatabaseView({
         )}
       </div>
 
+      {firebaseSyncError && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-800 rounded-xl flex items-start gap-3 shadow-sm animate-fade-in">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="text-sm font-black uppercase tracking-wide text-red-900 flex items-center gap-1.5">
+              Firebase Connection Failure / Sync Problem
+            </h4>
+            <p className="mt-1 text-xs text-slate-700 leading-normal font-medium">
+              We cannot load live records. This is NOT because there are no evaluations, but because of a database access/configuration issue:
+            </p>
+            <div className="mt-2 text-xs bg-white p-2.5 rounded border border-red-100 font-mono text-red-700 font-black overflow-x-auto select-all">
+              {firebaseSyncError}
+            </div>
+            <div className="mt-3 text-xs text-slate-600 leading-normal space-y-1">
+              <p className="font-semibold text-slate-700">Recommended Steps to Resolve:</p>
+              <ul className="list-disc pl-4 space-y-1 font-semibold text-slate-600">
+                <li>Make sure you initialized Firestore Database in your Firebase Console.</li>
+                <li>Go to <strong>Firebase Console &gt; Firestore Database &gt; Rules</strong> and ensure read/write rules allow access (e.g. <code>allow read, write: if true;</code> for initial testing).</li>
+                <li>Check your browser's console or ad/tracker blocker extensions which might be blocking Firebase requests.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Candidate Database</h2>
@@ -490,8 +517,20 @@ export default function DatabaseView({
           <tbody className="divide-y divide-slate-100">
             {filteredData.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-slate-500">
-                  No records found.
+                <td colSpan={7} className="p-12 text-center">
+                  {firebaseSyncError ? (
+                    <div className="inline-flex flex-col items-center gap-2 max-w-md">
+                      <AlertTriangle className="w-8 h-8 text-red-500 animate-bounce" />
+                      <p className="text-sm font-bold text-slate-800">Unable to Fetch Candidate Evaluations</p>
+                      <p className="text-xs text-slate-500 font-medium">
+                        A sync issue is currently preventing us from reaching your Firebase Firestore server. Any evaluations you submit might be pending connection recovery.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-slate-500 py-4 font-medium">
+                      No records found.
+                    </div>
+                  )}
                 </td>
               </tr>
             ) : filteredData.map(record => (

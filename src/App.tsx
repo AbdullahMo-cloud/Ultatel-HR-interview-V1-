@@ -488,7 +488,7 @@ export default function App() {
       } catch (e: any) {
         console.warn("Error writing to Firestore:", e);
         setIsSubmitting(false);
-        showAlert("Error", `Failed to save to database: ${e.message}`, "error");
+        showAlert("Error", `Failed to save to database: ${e.message}`, "alert");
       }
     } catch (e) {
       // In case of any unexpected critical failure that bypasses the normal catch
@@ -765,6 +765,7 @@ export default function App() {
                 setSheetsConfig={setSheetsConfig}
                 googleToken={googleToken}
                 onAuthorizeSheets={onAuthorizeSheets}
+                firebaseSyncError={firebaseSyncError}
               />
             )}
 
