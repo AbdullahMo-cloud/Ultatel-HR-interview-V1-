@@ -1,8 +1,10 @@
 {
-  "apiKey": "AIzaSyAS4t43Y1UZPhxX4xk8j-YoPH5HdfoRaME",
-  "authDomain": "hr-system-34c2c.firebaseapp.com",
-  "projectId": "hr-system-34c2c",
-  "storageBucket": "hr-system-34c2c.firebasestorage.app",
-  "messagingSenderId": "577075216730",
-  "appId": "1:577075216730:web:88a6d7ab747b734bac3363"
+  "apiKey": "AIzaSyBHBsNOvgAk8E1d_FUuCV5YuQ2D2jmk0Fs",
+  "authDomain": "bdrp-1bda0.firebaseapp.com",
+  "databaseURL": "https://bdrp-1bda0-default-rtdb.firebaseio.com",
+  "projectId": "bdrp-1bda0",
+  "storageBucket": "bdrp-1bda0.firebasestorage.app",
+  "messagingSenderId": "919573541759",
+  "appId": "1:919573541759:web:7c005691c589ad20f0204a",
+  "measurementId": "G-X8GSFW2CDT"
 }
