@@ -626,14 +626,18 @@ export default function App() {
       
       try {
         await setDoc(doc(db, 'evaluations', targetId), newRecord);
-        setDatabase(localDB);
         setIsSubmitting(false);
         doResetForm();
         setCurrentView('form');
         showAlert("Success", "Evaluation saved successfully to Cloud!", "success");
       } catch (e: any) {
         console.warn("Error writing to Firestore, falling back to local database:", e);
-        setDatabase(localDB);
+        // Force manual DB update for offline fallback if snapshot failed
+        setDatabase(prev => {
+          const exists = prev.some(r => r.id === targetId);
+          if (exists) return prev.map(r => r.id === targetId ? newRecord : r);
+          return [newRecord, ...prev];
+        });
         setIsSubmitting(false);
         doResetForm();
         setCurrentView('form');
@@ -663,10 +667,10 @@ export default function App() {
 
       // Update state immediately so the deletion is reflected instantly on the UI
       setDeletedRecordIds(prev => [...prev, id]);
-      setDatabase(localDB);
       if (selectedRecordId === id) setSelectedRecordId(null);
 
       if (user?.uid === 'local-sandbox-admin' || user?.isSandbox) {
+        setDatabase(localDB);
         return;
       }
 
@@ -675,7 +679,7 @@ export default function App() {
       } catch (e) {
         console.warn("Deleted locally, firestore delete failed (mock mode or permission issue):", e);
         // Even if Firestore remote delete fails/is offline, keep the local UI updated
-        setDatabase(localDB);
+        setDatabase(prev => prev.filter(r => r.id !== id));
       }
     });
   };
