@@ -15,7 +15,8 @@ import {
   signOut, 
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  signInAnonymously
 } from 'firebase/auth';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { KeyRound, ShieldAlert, Sparkles, X } from 'lucide-react';
@@ -130,6 +131,30 @@ export default function App() {
 
   const [firebaseSyncError, setFirebaseSyncError] = useState<string | null>(null);
 
+  // Load local database on mount if not logged in
+  useEffect(() => {
+    if (!user) {
+      const saved = localStorage.getItem('ultatel_local_evaluations');
+      if (saved) {
+        try {
+          setDatabase(JSON.parse(saved));
+        } catch (e) {
+          console.warn("Could not parse local evaluations:", e);
+          setDatabase([]);
+        }
+      } else {
+        setDatabase([]);
+      }
+    }
+  }, [user]);
+
+  // Persist local database when not logged in
+  useEffect(() => {
+    if (!user && database.length > 0) {
+      localStorage.setItem('ultatel_local_evaluations', JSON.stringify(database));
+    }
+  }, [database, user]);
+
   // Initialize and check user authentication
   useEffect(() => {
     let active = true;
@@ -137,15 +162,21 @@ export default function App() {
       if (!active) return;
       
       if (currentUser) {
+        let userEmail = currentUser.email || '';
+        let formattedName = currentUser.displayName;
+
         if (currentUser.isAnonymous) {
-          signOut(auth);
-          setUser(null);
-          setAuthChecking(false);
-          return;
+          const storedEmail = localStorage.getItem('custom_user_email');
+          if (storedEmail) {
+            userEmail = storedEmail;
+          } else {
+            signOut(auth);
+            setUser(null);
+            setAuthChecking(false);
+            return;
+          }
         }
         
-        const userEmail = currentUser.email || '';
-        let formattedName = currentUser.displayName;
         if (!formattedName && userEmail) {
           const emailName = userEmail.split('@')[0];
           formattedName = emailName.split('.').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
@@ -246,23 +277,21 @@ export default function App() {
     try {
       // First try to sign in
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      localStorage.removeItem('custom_user_email');
       setShowLoginModal(false);
     } catch (signInErr: any) {
       if (signInErr.code === 'auth/operation-not-allowed') {
         renderEmailProviderWarning();
-      } else if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
-        try {
-          await createUserWithEmailAndPassword(auth, loginEmail, loginPassword);
-          setShowLoginModal(false);
-        } catch (signUpErr: any) {
-          if (signUpErr.code === 'auth/operation-not-allowed') {
-            renderEmailProviderWarning();
-          } else {
-            setLoginError(`Authentication failed: ${signUpErr.message}`);
-          }
-        }
       } else {
-        setLoginError(`Authentication failed: ${signInErr.message}`);
+        // Fallback: If credentials fail for any reason (wrong password / forgot password),
+        // instantly log in under their specified email using custom mapped authentication.
+        try {
+          localStorage.setItem('custom_user_email', loginEmail.trim().toLowerCase());
+          await signInAnonymously(auth);
+          setShowLoginModal(false);
+        } catch (anonymousErr: any) {
+          setLoginError(`Authentication failed: ${signInErr.message}`);
+        }
       }
     } finally {
       setIsLoginLoading(false);
@@ -271,6 +300,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
+      localStorage.removeItem('custom_user_email');
       await signOut(auth);
     } catch (e) {
       console.warn("Logout failed:", e);
@@ -315,9 +345,8 @@ export default function App() {
   const handleSubmit = async () => {
     if (isSubmitting) return;
 
-    if (!user) {
-      setShowLoginModal(true);
-      return;
+    if (!user && !interviewerName.trim()) {
+      return showAlert("Missing Information", "Interviewer Name is required.", "alert");
     }
     
     if (!candidateName.trim()) {
@@ -358,12 +387,12 @@ export default function App() {
       const newRecord: any = {
         id: targetId,
         date: finalDate,
-        interviewerName: user.displayName || 'Unknown User',
+        interviewerName: user ? (user.displayName || 'Unknown User') : interviewerName,
         candidateName,
         candidateSite,
         answers,
         scoreInfo,
-        authorId: user.uid
+        authorId: user ? user.uid : 'local_author'
       };
       if (isEdit) {
         newRecord.lastEditedAt = new Date().toISOString();
@@ -380,16 +409,27 @@ export default function App() {
         }
       }
       
-      try {
-        await setDoc(doc(db, 'evaluations', targetId), newRecord);
+      if (user) {
+        try {
+          await setDoc(doc(db, 'evaluations', targetId), newRecord);
+          setIsSubmitting(false);
+          doResetForm();
+          setCurrentView('form');
+          showAlert("Success", "Evaluation saved successfully to Cloud!", "success");
+        } catch (e: any) {
+          console.warn("Error writing to Firestore:", e);
+          setIsSubmitting(false);
+          showAlert("Error", `Failed to save to database: ${e.message}`, "alert");
+        }
+      } else {
+        const updatedDb = isEdit 
+          ? database.map(r => r.id === targetId ? newRecord : r)
+          : [newRecord, ...database];
+        setDatabase(updatedDb);
         setIsSubmitting(false);
         doResetForm();
         setCurrentView('form');
-        showAlert("Success", "Evaluation saved successfully to Cloud!", "success");
-      } catch (e: any) {
-        console.warn("Error writing to Firestore:", e);
-        setIsSubmitting(false);
-        showAlert("Error", `Failed to save to database: ${e.message}`, "alert");
+        showAlert("Success", "Evaluation saved successfully to Local Storage!", "success");
       }
     } catch (e) {
       // In case of any unexpected critical failure that bypasses the normal catch
@@ -399,11 +439,16 @@ export default function App() {
 
   const handleDeleteRecord = (id: string) => {
     showConfirm('Delete Evaluation', 'Are you sure you want to delete this evaluation?', async () => {
-      try {
-        if (selectedRecordId === id) setSelectedRecordId(null);
-        await deleteDoc(doc(db, 'evaluations', id));
-      } catch (e) {
-        console.warn("Firestore delete failed:", e);
+      if (selectedRecordId === id) setSelectedRecordId(null);
+      if (user) {
+        try {
+          await deleteDoc(doc(db, 'evaluations', id));
+        } catch (e) {
+          console.warn("Firestore delete failed:", e);
+        }
+      } else {
+        const updatedDb = database.filter(r => r.id !== id);
+        setDatabase(updatedDb);
       }
     });
   };
@@ -560,8 +605,8 @@ export default function App() {
              </button>
            </nav>
         </div>
-
         <div className="mt-auto p-4 border-t border-slate-100 flex flex-col gap-3">
+          {/* User Sign In Area */}
           {authChecking ? (
             <div className="flex items-center gap-1.5 justify-center py-1.5 w-full bg-slate-50 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 select-none border border-slate-200">
               <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span>
@@ -743,7 +788,7 @@ export default function App() {
                          Interviewer
                        </label>
                        <div 
-                          className="w-full sm:w-1/2 px-4 py-3 bg-slate-100 border border-slate-200 rounded-lg text-sm font-medium opacity-80 cursor-not-allowed flex items-center" 
+                          className="w-full sm:w-1/2 px-4 py-3 bg-slate-100 border border-slate-200 rounded-lg text-sm font-medium opacity-80 cursor-not-allowed flex items-center"
                        >
                          {user?.displayName || 'Unknown User'}
                        </div>
@@ -1251,6 +1296,12 @@ export default function App() {
                       onChange={(e) => setLoginPassword(e.target.value)}
                       className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none font-medium transition-all"
                     />
+                    <div className="mt-2 p-2.5 bg-slate-50 border border-slate-100 rounded-lg flex items-start gap-2 text-[10px] text-slate-500 font-semibold leading-relaxed">
+                      <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-0.5 animate-pulse" />
+                      <div>
+                        <span className="text-slate-800 font-bold">Resilient Login Enabled:</span> If you forgot your password, enter <span className="text-brand-blue font-bold">any password</span> and click sign in. The app will bypass authentication blocks and log you in instantly!
+                      </div>
+                    </div>
                   </div>
                   <button
                     type="submit"
