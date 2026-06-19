@@ -160,11 +160,6 @@ export default function App() {
   const [loginError, setLoginError] = useState<React.ReactNode | string>('');
   const [isLoginLoading, setIsLoginLoading] = useState(false);
 
-  const [showCustomFirebaseForm, setShowCustomFirebaseForm] = useState(false);
-  const [customFirebaseJSON, setCustomFirebaseJSON] = useState(() => {
-    return localStorage.getItem('ultatel_custom_firebase_config') || '';
-  });
-  const [customFirebaseError, setCustomFirebaseError] = useState('');
   const [firebaseSyncError, setFirebaseSyncError] = useState<string | null>(null);
 
   // Initialize and check local storage user if present
@@ -408,31 +403,6 @@ export default function App() {
       isSandbox: true,
       photoURL: ''
     });
-  };
-
-  const handleSaveCustomFirebase = (e: React.FormEvent) => {
-    e.preventDefault();
-    setCustomFirebaseError('');
-    if (!customFirebaseJSON.trim()) {
-      // Uninstall custom config and revert to default
-      localStorage.removeItem('ultatel_custom_firebase_config');
-      alert("Custom config cleared. Reverting to the default system Firebase project template.");
-      window.location.reload();
-      return;
-    }
-
-    try {
-      // Clean comments if any or parse as JSON
-      const parsed = JSON.parse(customFirebaseJSON.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, ''));
-      if (!parsed.apiKey || !parsed.projectId) {
-        throw new Error("Configuration lacks 'apiKey' or 'projectId'. Please copy-paste the web config object completely.");
-      }
-      localStorage.setItem('ultatel_custom_firebase_config', JSON.stringify(parsed));
-      alert("Success! Reconnecting database client using your custom private Firebase project credentials...");
-      window.location.reload();
-    } catch (err: any) {
-      setCustomFirebaseError(`Invalid JSON configuration: ${err.message}. Please verify the format.`);
-    }
   };
 
   const handleAnswer = (questionId: string, value: any) => {
@@ -1458,98 +1428,6 @@ export default function App() {
                     {isLoginLoading ? "Processing..." : "Sign In or Auto Sign Up"}
                   </button>
                 </form>
-
-                <div className="flex items-center gap-3 text-slate-300 text-xs font-black uppercase my-4 font-sans">
-                  <div className="h-[1px] bg-slate-100 flex-1"></div>
-                  <span>Vercel Deploy Option</span>
-                  <div className="h-[1px] bg-slate-100 flex-1"></div>
-                </div>
-
-                {/* 3. Fast Bypass Instant Sandbox/Guest Option */}
-                <button
-                  type="button"
-                  disabled={isLoginLoading}
-                  onClick={handleGuestSandboxLogin}
-                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-brand-yellow/10 border border-brand-yellow/30 text-yellow-800 rounded-xl text-xs font-extrabold tracking-wide hover:bg-brand-yellow/20 transition-all"
-                >
-                  <Sparkles className="w-4 h-4 text-brand-yellow animate-pulse" />
-                  Launch Live Demo Sandbox (No Setup)
-                </button>
-                
-                <p className="text-[10px] text-center text-slate-400 font-semibold leading-relaxed px-2">
-                  ℹ️ **Sandbox Mode** works out-of-the-box on Vercel & saves evaluations safely using local web storage cache!
-                </p>
-
-                <div className="flex items-center gap-3 text-slate-300 text-xs font-black uppercase my-4 font-sans">
-                  <div className="h-[1px] bg-slate-100 flex-1"></div>
-                  <span>⚙️ Custom Project Setup</span>
-                  <div className="h-[1px] bg-slate-100 flex-1"></div>
-                </div>
-
-                {/* 4. Collapsible Private Custom Firebase Configuration */}
-                <div className="border border-slate-150 rounded-xl overflow-hidden bg-slate-50/50">
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomFirebaseForm(!showCustomFirebaseForm)}
-                    className="w-full flex items-center justify-between p-3 text-[10px] font-black uppercase tracking-wide text-slate-700 bg-slate-100/60 hover:bg-slate-100 transition-all"
-                  >
-                    <span>⚙️ Use Your Private Firebase Project</span>
-                    <span className="text-slate-400 font-extrabold text-[9px] uppercase">
-                      {showCustomFirebaseForm ? "▲ Hide Option" : "▼ Setup Free"}
-                    </span>
-                  </button>
-
-                  {showCustomFirebaseForm && (
-                    <div className="p-3 bg-white space-y-2.5 border-t border-slate-100 text-left">
-                      <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                        To bypass authorization domain keys or enable private Email auth under your full control, create a <strong>free project</strong> on Firebase Console & paste your Web configuration object below:
-                      </p>
-                      
-                      <ol className="list-decimal pl-3.5 space-y-1 text-[9.5px] text-slate-500 font-bold leading-normal">
-                        <li>Visit <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-brand-blue underline font-black">Firebase Console</a> and click <strong>Add Project</strong>.</li>
-                        <li>Add a <strong>"Web app"</strong> under Project Overview to create SDK configuration keys.</li>
-                        <li>Copy the config object (usually starting with <code>{"{"} apiKey: ...</code>) and paste it here:</li>
-                      </ol>
-
-                      {customFirebaseError && (
-                        <div className="p-2.5 bg-red-50 text-red-700 rounded-lg text-[10px] font-semibold border border-red-100 leading-normal">
-                          {customFirebaseError}
-                        </div>
-                      )}
-
-                      <form onSubmit={handleSaveCustomFirebase} className="space-y-2 pt-1">
-                        <textarea
-                          placeholder={`{\n  "apiKey": "AIzaSy...",\n  "authDomain": "my-app-name.firebaseapp.com",\n  "projectId": "my-app-name",\n  "appId": "..."\n}`}
-                          value={customFirebaseJSON}
-                          onChange={(e) => setCustomFirebaseJSON(e.target.value)}
-                          rows={6}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-mono focus:border-brand-blue focus:ring-1 focus:ring-brand-blue focus:outline-none transition-all leading-normal"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            type="submit"
-                            className="flex-1 py-2 bg-brand-blue text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-brand-blue-light transition-colors text-center shadow"
-                          >
-                            Save & Reload
-                          </button>
-                          {localStorage.getItem('ultatel_custom_firebase_config') && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                localStorage.removeItem('ultatel_custom_firebase_config');
-                                alert("Returned back to system default database.");
-                                window.location.reload();
-                              }}
-                              className="px-2.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors"
-                            >
-                              Reset
-                            </button>
-                          )}
-                        </div>
-                      </form>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>
