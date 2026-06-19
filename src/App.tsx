@@ -204,22 +204,7 @@ export default function App() {
       return;
     }
 
-    // Checking if they are simulated guest / local sandbox admin
-    if (user.uid === 'local-sandbox-admin' || user.isSandbox) {
-      const stored = localStorage.getItem('ultatel_evaluations');
-      if (stored) {
-        try {
-          setDatabase(JSON.parse(stored));
-        } catch (e) {
-          console.error('Error parsing evaluations', e);
-        }
-      } else {
-        setDatabase([]);
-      }
-      return;
-    }
-
-    // Fetch all evaluations so they are shared across all registered users
+    // Fetch all evaluations so they are shared across all users (even sandbox users)
     const q = query(collection(db, 'evaluations'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setFirebaseSyncError(null);
@@ -617,15 +602,6 @@ export default function App() {
           console.warn("Real-time Sheets sync is active, but Google auth token has expired or is missing.");
         }
       }
-
-      if (user.uid === 'local-sandbox-admin' || user.isSandbox) {
-        setDatabase(localDB);
-        setIsSubmitting(false);
-        doResetForm();
-        setCurrentView('form');
-        showAlert("Success", "Evaluation saved successfully!", "success");
-        return;
-      }
       
       try {
         await setDoc(doc(db, 'evaluations', targetId), newRecord);
@@ -671,11 +647,6 @@ export default function App() {
       // Update state immediately so the deletion is reflected instantly on the UI
       setDeletedRecordIds(prev => [...prev, id]);
       if (selectedRecordId === id) setSelectedRecordId(null);
-
-      if (user?.uid === 'local-sandbox-admin' || user?.isSandbox) {
-        setDatabase(localDB);
-        return;
-      }
 
       try {
         await deleteDoc(doc(db, 'evaluations', id));
