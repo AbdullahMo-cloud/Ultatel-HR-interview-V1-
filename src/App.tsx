@@ -217,39 +217,8 @@ export default function App() {
         } as EvaluationRecord);
       });
 
-      // Merge local storage records (from offline/sandbox) that are not yet in Firestore
-      const storedLocal = localStorage.getItem('ultatel_evaluations') || localStorage.getItem(`ultatel_evaluations_${user.uid}`);
-      let localOnlyRecords: EvaluationRecord[] = [];
-      if (storedLocal) {
-        try {
-          const parsedLocal = JSON.parse(storedLocal) as EvaluationRecord[];
-          localOnlyRecords = parsedLocal.filter(localRec => !records.some(r => r.id === localRec.id));
-        } catch (e) {}
-      }
-
-      // Merge in localOnlyRecords and try to sync them to Cloud Firestore
-      const mergedRecords = [...records];
-      if (localOnlyRecords.length > 0) {
-        localOnlyRecords.forEach(localRec => {
-          mergedRecords.push(localRec);
-
-          // Proactively try to sync localOnlyRecord to Firestore in the background
-          const updatedRec = {
-            ...localRec,
-            authorId: localRec.authorId || user.uid
-          };
-          setDoc(doc(db, 'evaluations', localRec.id), updatedRec)
-            .then(() => {
-              console.log(`Auto-synchronized local record ${localRec.id} to Firestore`);
-            })
-            .catch((err) => {
-              console.warn(`Could not auto-sync local record ${localRec.id} to Firestore:`, err);
-            });
-        });
-      }
-      
       // Keep sorting completely safe and immune to corrupt, empty, or missing date formats
-      mergedRecords.sort((a, b) => {
+      records.sort((a, b) => {
         const timeA = a.date ? new Date(a.date).getTime() : 0;
         const timeB = b.date ? new Date(b.date).getTime() : 0;
         const safeA = isNaN(timeA) ? 0 : timeA;
@@ -257,23 +226,10 @@ export default function App() {
         return safeB - safeA;
       });
       
-      setDatabase(mergedRecords);
-      
-      // Keep shadow cache in localStorage
-      localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(mergedRecords));
-      localStorage.setItem('ultatel_evaluations', JSON.stringify(mergedRecords));
+      setDatabase(records);
     }, (error: any) => {
-      console.warn('Firestore Error, using local backup database:', error);
+      console.warn('Firestore Error:', error);
       setFirebaseSyncError(error.message || 'Unknown Firestore Sync Error');
-      // Fallback to local storage evaluations for this user or overall cache
-      const stored = localStorage.getItem(`ultatel_evaluations_${user.uid}`) || localStorage.getItem('ultatel_evaluations');
-      if (stored) {
-        try {
-          setDatabase(JSON.parse(stored));
-        } catch (e) {
-          console.error(e);
-        }
-      }
     });
     return () => unsubscribe();
   }, [user]);
@@ -573,24 +529,6 @@ export default function App() {
       if (isEdit) {
         newRecord.lastEditedAt = new Date().toISOString();
       }
-      
-      // Save locally first to guarantee zero-data-loss for sandbox/offline
-      const stored = localStorage.getItem('ultatel_evaluations');
-      let localDB: any[] = [];
-      if (stored) {
-        try {
-          localDB = JSON.parse(stored);
-        } catch (e) {}
-      }
-
-      if (isEdit) {
-        localDB = localDB.map(r => r.id === targetId ? newRecord : r);
-      } else {
-        localDB.unshift(newRecord);
-      }
-
-      localStorage.setItem('ultatel_evaluations', JSON.stringify(localDB));
-      localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
 
       // Google Sheets real-time synchronization
       if (sheetsConfig.syncEnabled && sheetsConfig.spreadsheetId) {
@@ -610,17 +548,9 @@ export default function App() {
         setCurrentView('form');
         showAlert("Success", "Evaluation saved successfully to Cloud!", "success");
       } catch (e: any) {
-        console.warn("Error writing to Firestore, falling back to local database:", e);
-        // Force manual DB update for offline fallback if snapshot failed
-        setDatabase(prev => {
-          const exists = prev.some(r => r.id === targetId);
-          if (exists) return prev.map(r => r.id === targetId ? newRecord : r);
-          return [newRecord, ...prev];
-        });
+        console.warn("Error writing to Firestore:", e);
         setIsSubmitting(false);
-        doResetForm();
-        setCurrentView('form');
-        showAlert("Offline Fallback", `Report saved to local database fallback (${e.message || 'Firestore offline'}). You can fully access it on this browser!`, "success");
+        showAlert("Error", `Failed to save to database: ${e.message}`, "error");
       }
     } catch (e) {
       // In case of any unexpected critical failure that bypasses the normal catch
@@ -630,30 +560,14 @@ export default function App() {
 
   const handleDeleteRecord = (id: string) => {
     showConfirm('Delete Evaluation', 'Are you sure you want to delete this evaluation?', async () => {
-      // Delete locally
-      const stored = localStorage.getItem('ultatel_evaluations');
-      let localDB: any[] = [];
-      if (stored) {
-        try {
-          localDB = JSON.parse(stored);
-        } catch (e) {}
-      }
-      localDB = localDB.filter(r => r.id !== id);
-      localStorage.setItem('ultatel_evaluations', JSON.stringify(localDB));
-      if (user) {
-        localStorage.setItem(`ultatel_evaluations_${user.uid}`, JSON.stringify(localDB));
-      }
-
-      // Update state immediately so the deletion is reflected instantly on the UI
-      setDeletedRecordIds(prev => [...prev, id]);
-      if (selectedRecordId === id) setSelectedRecordId(null);
-
       try {
+        // Update state immediately so the deletion is reflected instantly on the UI
+        setDeletedRecordIds(prev => [...prev, id]);
+        if (selectedRecordId === id) setSelectedRecordId(null);
         await deleteDoc(doc(db, 'evaluations', id));
       } catch (e) {
-        console.warn("Deleted locally, firestore delete failed (mock mode or permission issue):", e);
-        // Even if Firestore remote delete fails/is offline, keep the local UI updated
-        setDatabase(prev => prev.filter(r => r.id !== id));
+        console.warn("Firestore delete failed:", e);
+        // Remove from deleted ids so it comes back if delete fails maybe, or just keep it removed
       }
     });
   };
