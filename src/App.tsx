@@ -119,24 +119,7 @@ export default function App() {
   
   const [database, setDatabase] = useState<EvaluationRecord[]>([]);
 
-  const [user, setUser] = useState<any>(() => {
-    const localUserStr = localStorage.getItem('ultatel_local_user');
-    if (localUserStr) {
-      try {
-        return JSON.parse(localUserStr);
-      } catch (e) {
-        localStorage.removeItem('ultatel_local_user');
-      }
-    }
-    // Default to a 150% free Sandbox/Guest account out-of-the-box so users are never gated or blocked by deployment setup
-    return {
-      uid: 'local-sandbox-admin',
-      displayName: 'Guest HR Admin',
-      email: 'sandbox@ultatel.com',
-      isSandbox: true,
-      photoURL: ''
-    };
-  });
+  const [user, setUser] = useState<any>(null);
   const [authChecking, setAuthChecking] = useState(true);
 
   // Custom login state
@@ -148,44 +131,47 @@ export default function App() {
 
   const [firebaseSyncError, setFirebaseSyncError] = useState<string | null>(null);
 
-  // Initialize and check local storage user if present
+  // Initialize and check user authentication with automatic anonymous sign-in fallback
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      // Standard firebase user state overrides local mock ONLY if currentUser is present
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (!active) return;
+      
       if (currentUser) {
         setUser(currentUser);
-        localStorage.removeItem('ultatel_local_user'); // Clear local temp session to prioritize real session
+        setAuthChecking(false);
       } else {
-        const localUserStr = localStorage.getItem('ultatel_local_user');
-        if (localUserStr) {
-          try {
-            setUser(JSON.parse(localUserStr));
-          } catch (e) {
-            localStorage.removeItem('ultatel_local_user');
+        // Automatically Sign In Anonymously so we always are a real Firebase user!
+        try {
+          const anonCredential = await signInAnonymously(auth);
+          if (active) {
+            setUser(anonCredential.user);
+            setAuthChecking(false);
           }
-        } else {
-          setUser({
-            uid: 'local-sandbox-admin',
-            displayName: 'Guest HR Admin',
-            email: 'sandbox@ultatel.com',
-            isSandbox: true,
-            photoURL: ''
-          });
+        } catch (err: any) {
+          console.warn("Could not sign in anonymously automatically, using offline session fallback:", err);
+          if (active) {
+            setUser({
+              uid: 'system-guest-user',
+              displayName: 'Guest HR Admin',
+              email: 'sandbox@ultatel.com',
+              isAnonymous: true,
+              photoURL: ''
+            });
+            setAuthChecking(false);
+          }
         }
       }
-      setAuthChecking(false);
     });
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
-  // Sync database with Firestore or Local Storage Fallback
+  // Sync database with Firestore unconditionally on mount for direct real-time updates
   useEffect(() => {
-    if (!user) {
-      setDatabase([]);
-      return;
-    }
-
-    // Fetch all evaluations so they are shared across all users (even sandbox users)
+    // Fetch all evaluations so they are shared across all users in real-time
     const q = query(collection(db, 'evaluations'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setFirebaseSyncError(null);
@@ -209,11 +195,11 @@ export default function App() {
       
       setDatabase(records);
     }, (error: any) => {
-      console.warn('Firestore Error:', error);
+      console.warn('Firestore Error, cannot sync remote database:', error);
       setFirebaseSyncError(error.message || 'Unknown Firestore Sync Error');
     });
     return () => unsubscribe();
-  }, [user]);
+  }, []);
 
   // Login handler with Google
   const handleGoogleLogin = async () => {
@@ -366,7 +352,7 @@ export default function App() {
         uid: 'local-sandbox-admin',
         displayName: 'Guest HR Admin',
         email: 'sandbox@ultatel.com',
-        isSandbox: true,
+        isAnonymous: true,
         photoURL: ''
       };
       localStorage.setItem('ultatel_local_user', JSON.stringify(mockUser));
@@ -379,16 +365,12 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    signOut(auth);
-    localStorage.removeItem('ultatel_local_user');
-    setUser({
-      uid: 'local-sandbox-admin',
-      displayName: 'Guest HR Admin',
-      email: 'sandbox@ultatel.com',
-      isSandbox: true,
-      photoURL: ''
-    });
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn("Logout failed:", e);
+    }
   };
 
   const handleAnswer = (questionId: string, value: any) => {
@@ -683,46 +665,46 @@ export default function App() {
             <>
               <div className="flex items-center justify-between gap-3 w-full">
                 <div className="flex items-center gap-3 overflow-hidden">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${user.isSandbox ? 'bg-amber-100/60 border border-amber-200' : 'bg-brand-light'}`}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-brand-light">
                     {user.photoURL ? (
                       <img src={user.photoURL} alt="" className="w-full h-full rounded-full" />
                     ) : (
-                      <User className={`w-4 h-4 ${user.isSandbox ? 'text-amber-600 font-bold' : 'text-brand-blue'}`} />
+                      <User className="w-4 h-4 text-brand-blue" />
                     )}
                   </div>
                   <div className="overflow-hidden">
                     <div className="text-xs font-black text-slate-900 truncate">{user.displayName || 'Guest HR Admin'}</div>
                     <div className="text-[10px] text-slate-500 font-semibold truncate">
-                      {user.isSandbox ? 'Sandbox Mode' : (user.email || 'hr@ultatel.com')}
+                      {user.isAnonymous ? 'Guest Mode' : (user.email || 'hr@ultatel.com')}
                     </div>
                   </div>
                 </div>
                 
                 <div className="flex items-center shrink-0">
-                  {user.isSandbox ? (
-                    <span className="flex h-2 w-2 relative" title="Sandbox Offline Active">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  {user.isAnonymous ? (
+                    <span className="flex h-2 w-2 relative" title="Guest Session Active">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                     </span>
                   ) : (
-                    <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Logout to Sandbox">
+                    <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Logout">
                       <LogOut className="w-4 h-4" />
                     </button>
                   )}
                 </div>
               </div>
 
-              {user.isSandbox ? (
+              {user.isAnonymous ? (
                 <button
                   onClick={() => setShowLoginModal(true)}
-                  className="w-full py-1.5 px-3 bg-brand-blue text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-brand-blue-light transition-all text-center shrink-0 flex items-center justify-center gap-1.5 animate-pulse"
+                  className="w-full py-1.5 px-3 bg-brand-blue text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-brand-blue-light transition-all text-center shrink-0 flex items-center justify-center gap-1.5"
                 >
                   <Database className="w-3.5 h-3.5" />
-                  Connect Firebase Cloud
+                  Connect Admin Account
                 </button>
               ) : firebaseSyncError ? (
                 <button
-                  onClick={() => alert(`Firestore Sync Error: ${firebaseSyncError}. You are offline and your data is saved locally only.`)} 
+                  onClick={() => alert(`Firestore Sync Error: ${firebaseSyncError}. Please check connection.`)} 
                   className="flex items-center gap-1.5 justify-center py-1 bg-red-50 text-red-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 border border-red-200"
                 >
                   <AlertTriangle className="w-3 h-3 text-red-500" />
