@@ -118,21 +118,7 @@ export default function App() {
   };
   
   const [database, setDatabase] = useState<EvaluationRecord[]>([]);
-  const [deletedRecordIds, setDeletedRecordIds] = useState<string[]>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('ultatel_deleted_record_ids');
-      if (stored) {
-        try {
-          return JSON.parse(stored);
-        } catch (e) {}
-      }
-    }
-    return [];
-  });
 
-  useEffect(() => {
-    localStorage.setItem('ultatel_deleted_record_ids', JSON.stringify(deletedRecordIds));
-  }, [deletedRecordIds]);
   const [user, setUser] = useState<any>(() => {
     const localUserStr = localStorage.getItem('ultatel_local_user');
     if (localUserStr) {
@@ -531,13 +517,10 @@ export default function App() {
   const handleDeleteRecord = (id: string) => {
     showConfirm('Delete Evaluation', 'Are you sure you want to delete this evaluation?', async () => {
       try {
-        // Update state immediately so the deletion is reflected instantly on the UI
-        setDeletedRecordIds(prev => [...prev, id]);
         if (selectedRecordId === id) setSelectedRecordId(null);
         await deleteDoc(doc(db, 'evaluations', id));
       } catch (e) {
         console.warn("Firestore delete failed:", e);
-        // Remove from deleted ids so it comes back if delete fails maybe, or just keep it removed
       }
     });
   };
@@ -548,8 +531,8 @@ export default function App() {
   };
 
   const filteredDatabase = useMemo(() => {
-    return database.filter(r => !deletedRecordIds.includes(r.id));
-  }, [database, deletedRecordIds]);
+    return database;
+  }, [database]);
 
   const selectedRecord = useMemo(() => {
     return filteredDatabase.find(r => r.id === selectedRecordId);
