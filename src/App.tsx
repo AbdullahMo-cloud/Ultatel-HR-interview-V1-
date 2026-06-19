@@ -137,10 +137,17 @@ export default function App() {
       if (!active) return;
       
       if (currentUser) {
+        const userEmail = currentUser.email || '';
+        let formattedName = currentUser.displayName;
+        if (!formattedName && userEmail) {
+          const emailName = userEmail.split('@')[0];
+          formattedName = emailName.split('.').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+        }
+        
         setUser({
           uid: currentUser.uid,
-          displayName: 'HR Administrator',
-          email: currentUser.email || 'admin@ultatel.com',
+          displayName: formattedName || 'User',
+          email: userEmail,
           isAnonymous: currentUser.isAnonymous,
           photoURL: currentUser.photoURL || ''
         });
@@ -300,9 +307,6 @@ export default function App() {
       return;
     }
     
-    if (!interviewerName.trim()) {
-      return showAlert("Missing Information", "Interviewer Name is required.", "alert");
-    }
     if (!candidateName.trim()) {
       return showAlert("Missing Information", "Candidate Name is required.", "alert");
     }
@@ -341,7 +345,7 @@ export default function App() {
       const newRecord: any = {
         id: targetId,
         date: finalDate,
-        interviewerName,
+        interviewerName: user.displayName || 'Unknown User',
         candidateName,
         candidateSite,
         answers,
@@ -545,7 +549,12 @@ export default function App() {
         </div>
 
         <div className="mt-auto p-4 border-t border-slate-100 flex flex-col gap-3">
-          {user ? (
+          {authChecking ? (
+            <div className="flex items-center gap-1.5 justify-center py-1.5 w-full bg-slate-50 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 select-none border border-slate-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span>
+              Checking Auth...
+            </div>
+          ) : user ? (
             <>
               <div className="flex items-center justify-between gap-3 w-full">
                 <div className="flex items-center gap-3 overflow-hidden">
@@ -557,9 +566,9 @@ export default function App() {
                     )}
                   </div>
                   <div className="overflow-hidden">
-                    <div className="text-xs font-black text-slate-900 truncate">{user.displayName || 'HR Administrator'}</div>
+                    <div className="text-xs font-black text-slate-900 truncate">{user.displayName || 'Unknown User'}</div>
                     <div className="text-[10px] text-slate-500 font-semibold truncate">
-                      {user.email || 'admin@ultatel.com'}
+                      {user.email || 'No Email'}
                     </div>
                   </div>
                 </div>
@@ -588,10 +597,12 @@ export default function App() {
               )}
             </>
           ) : (
-            <div className="flex items-center gap-1.5 justify-center py-1.5 w-full bg-blue-50 text-blue-800 rounded-lg text-[10px] font-black uppercase tracking-widest px-2 shrink-0 select-none border border-blue-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-              Initializing Database...
-            </div>
+            <button
+              onClick={() => setShowLoginModal(true)}
+              className="flex items-center gap-1.5 justify-center py-2.5 w-full bg-brand-blue text-white hover:bg-brand-blue-light transition-all rounded-lg text-xs font-black uppercase tracking-widest px-2 shrink-0 border shadow-sm active:scale-[0.98]"
+            >
+              Log In
+            </button>
           )}
         </div>
       </aside>
@@ -708,31 +719,13 @@ export default function App() {
                     
                     <div className="mt-8 border-b border-slate-100 pb-6 mb-6">
                        <label className="block text-xs font-bold tracking-widest text-slate-500 mb-2 uppercase">
-                         Interviewer Name <span className="text-red-500 font-extrabold">*</span>
+                         Interviewer
                        </label>
-                       <select 
-                          className="w-full sm:w-1/2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20 focus:outline-none transition-all text-sm font-medium appearance-none" 
-                          value={interviewerName}
-                          onChange={(e) => setInterviewerName(e.target.value)}
+                       <div 
+                          className="w-full sm:w-1/2 px-4 py-3 bg-slate-100 border border-slate-200 rounded-lg text-sm font-medium opacity-80 cursor-not-allowed flex items-center" 
                        >
-                          <option value="" disabled>Select Interviewer</option>
-                          <option value="Adam Gibson">Adam Gibson</option>
-                          <option value="Steven Wilson">Steven Wilson</option>
-                          <option value="Merna Hany">Merna Hany</option>
-                          <option value="Frank Smith">Frank Smith</option>
-                          <option value="Alex Smith">Alex Smith</option>
-                          <option value="Ivy Robinson">Ivy Robinson</option>
-                          <option value="AJ James">AJ James</option>
-                          <option value="Josh Alt">Josh Alt</option>
-                          <option value="Tom Miller">Tom Miller</option>
-                          <option value="Sam">Sam</option>
-                          <option value="Scott Cowell">Scott Cowell</option>
-                          <option value="Matt Miller">Matt Miller</option>
-                          <option value="August Swift">August Swift</option>
-                          <option value="Mariem">Mariem</option>
-                          <option value="Sophia">Sophia</option>
-                          <option value="Nadine">Nadine</option>
-                       </select>
+                         {user?.displayName || 'Unknown User'}
+                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
