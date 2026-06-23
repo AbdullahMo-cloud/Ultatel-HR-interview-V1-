@@ -3,6 +3,17 @@ import { EvaluationRecord } from './types';
 import { Download, Search, Trash2, Eye, Calendar, User, FileSpreadsheet, RefreshCw, CheckCircle, AlertTriangle, Link2, Unlink, LogIn, ExternalLink, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { createSpreadsheet, validateSpreadsheet, appendRows } from './sheetsService';
 
+function getDecisionInfo(recName: string) {
+  const rec = (recName || '').toLowerCase().trim();
+  if (rec === 'strong hire' || rec === 'hire') {
+    return { label: 'Accepted', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  } else if (rec.includes('possible hire') || rec.includes('mindset and honesty')) {
+    return { label: 'Recommended', className: 'bg-amber-50 text-amber-700 border-amber-200' };
+  } else {
+    return { label: 'Rejected', className: 'bg-rose-50 text-rose-700 border-rose-200' };
+  }
+}
+
 interface Props {
   data: EvaluationRecord[];
   onDelete: (id: string) => void;
@@ -510,6 +521,7 @@ export default function DatabaseView({
               <th className="p-4">Site</th>
               <th className="p-4">Interviewer</th>
               <th className="p-4 text-center">Score</th>
+              <th className="p-4 text-center">Decision</th>
               <th className="p-4">Recommendation</th>
               <th className="p-4 text-right rounded-tr">Actions</th>
             </tr>
@@ -517,7 +529,7 @@ export default function DatabaseView({
           <tbody className="divide-y divide-slate-100">
             {filteredData.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-12 text-center">
+                <td colSpan={8} className="p-12 text-center">
                   {firebaseSyncError ? (
                     <div className="inline-flex flex-col items-center gap-2 max-w-md">
                       <AlertTriangle className="w-8 h-8 text-red-500 animate-bounce" />
@@ -560,6 +572,16 @@ export default function DatabaseView({
                   <span className="inline-flex items-center justify-center font-bold text-slate-900">
                     {record.scoreInfo?.total || 0}
                   </span>
+                </td>
+                <td className="p-4 text-center">
+                  {(() => {
+                    const info = getDecisionInfo(record.scoreInfo?.rec || '');
+                    return (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border ${info.className}`}>
+                        {info.label}
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td className="p-4">
                   <span className={`inline-block px-2 py-1 text-[10px] font-bold rounded uppercase tracking-tighter ${record.scoreInfo?.color || 'bg-slate-100 text-slate-500'}`}>
